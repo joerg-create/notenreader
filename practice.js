@@ -257,11 +257,11 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     pill.replaceChildren(h('span', { class: 'pill-dot' }), `${st.bpm}`, h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); stop(); } }, '■'));
     if (panel.hidden) return;
     const head = h('div', { class: 'pr-head' },
-      h('div', { class: 'pr-tabs' },
-        h('button', { class: tab === 'metro' ? 'active' : '', onclick: () => { tab = 'metro'; render(); } }, 'Metronom'),
-        h('button', { class: tab === 'tuner' ? 'active' : '', onclick: () => { tab = 'tuner'; render(); } }, 'Stimmgerät'),
-        h('button', { class: tab === 'play' ? 'active' : '', onclick: () => { tab = 'play'; render(); } }, 'Mitspielen'),
-        h('button', { class: tab === 'ueben' ? 'active' : '', onclick: () => { tab = 'ueben'; render(); } }, 'Üben')),
+      tab === 'play' || tab === 'ueben'
+        ? h('div', { class: 'pr-title' }, tab === 'play' ? 'Mitspielen' : 'Üben')
+        : h('div', { class: 'pr-tabs' },
+          h('button', { class: tab === 'metro' ? 'active' : '', onclick: () => { tab = 'metro'; render(); } }, 'Metronom'),
+          h('button', { class: tab === 'tuner' ? 'active' : '', onclick: () => { tab = 'tuner'; render(); } }, 'Stimmgerät')),
       h('button', { class: 'btn icon small', 'aria-label': 'Schließen', onclick: close }, icon('x')));
     let body;
     if (tab === 'ueben') {
@@ -375,7 +375,9 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     open, close, toggle, scoreChanged, isOpen: () => !panel.hidden,
     // Metronom-Knopf: Metronom/Stimmgerät; Musik-Knopf: Mitspielen
     flush: () => ueben.flush(),
-    toggleTools: () => { if (tab !== 'play') lastTool = tab; toggle(tab === 'play' || panel.hidden ? lastTool : undefined); },
-    toggleMusic: () => { if (tab !== 'play') lastTool = tab; toggle('play'); },
+    // Drei Fenster: Metronom/Stimmgerät, Mitspielen, Üben
+    toggleTools: () => { const isTool = tab === 'metro' || tab === 'tuner'; if (isTool) lastTool = tab; toggle(isTool && !panel.hidden ? undefined : lastTool); },
+    toggleMusic: () => { if (tab === 'metro' || tab === 'tuner') lastTool = tab; toggle('play'); },
+    toggleUeben: () => { if (tab === 'metro' || tab === 'tuner') lastTool = tab; toggle('ueben'); },
   };
 }
