@@ -1,12 +1,50 @@
 // Apple Music im Notenreader (MusicKit JS). Braucht einen Entwickler-Zugangscode (musickit-token.js),
 // eine Anmeldung mit der Apple-ID auf jedem Gerät und ein Apple-Music-Abo.
+// In der iPad/iPhone-App übernimmt eine native Brücke (MusicKit für iOS) dieselben Aufgaben.
 import { DEV_TOKEN } from './musickit-token.js';
+
+/* ----- Native Brücke (App „Notenreader“ für iOS) ----- */
+const bridge = window.webkit?.messageHandlers?.notenreader || null;
+export const amNative = !!bridge;
+let nState = { playing: false, time: 0, dur: 0, id: null, rate: 1 };
+let nAuth = false, nInit = null, nSeq = 0;
+const nPending = new Map();
+const nListeners = {};
+const nEmit = (ev) => (nListeners[ev] || []).forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+if (bridge) {
+  window.__nativeMusic = {
+    resolve(id, res) {
+      const p = nPending.get(id);
+      if (!p) return;
+      nPending.delete(id);
+      if (res && res.ok) p.resolve(res.value); else p.reject(new Error(res?.error || 'Apple Music: Fehler'));
+    },
+    push(st) {
+      const was = nState.playing;
+      nState = { ...nState, ...st };
+      nEmit('playbackTimeDidChange');
+      if (was !== nState.playing) nEmit('playbackStateDidChange');
+    },
+  };
+}
+function nCall(cmd, args = {}) {
+  return new Promise((resolve, reject) => {
+    const id = ++nSeq;
+    nPending.set(id, { resolve, reject });
+    try { bridge.postMessage({ id, cmd, args }); } catch (e) { nPending.delete(id); reject(e); }
+  });
+}
+function nStart() {
+  if (!nInit) nInit = nCall('status').then((r) => { nAuth = !!r?.authorized; if (r?.state) nState = { ...nState, ...r.state }; return { native: true }; })
+    .catch((e) => { nInit = null; throw e; });
+  return nInit;
+}
 
 const SCRIPT = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
 let loading = null;
 let mk = null;
 
-export const amAvailable = () => !!DEV_TOKEN;
+export const amAvailable = () => amNative || !!DEV_TOKEN;
 
 function loadScript() {
   if (window.MusicKit?.configure) return Promise.resolve();
@@ -24,15 +62,22 @@ function loadScript() {
 }
 
 export async function amInstance() {
+  if (amNative) return nStart();
   if (mk) return mk;
   await loadScript();
   await window.MusicKit.configure({ developerToken: DEV_TOKEN, app: { name: 'Notenreader', build: '1' } });
   mk = window.MusicKit.getInstance();
   return mk;
 }
-export const amAuthorized = () => !!mk?.isAuthorized;
-export async function amAuthorize() { const m = await amInstance(); if (!m.isAuthorized) await m.authorize(); return m.isAuthorized; }
-export async function amSignOut() { const m = await amInstance(); await m.unauthorize(); }
+export const amAuthorized = () => (amNative ? nAuth : !!mk?.isAuthorized);
+export async function amAuthorize() {
+  if (amNative) { await nStart(); const r = await nCall('authorize'); nAuth = !!r?.authorized; return nAuth; }
+  const m = await amInstance(); if (!m.isAuthorized) await m.authorize(); return m.isAuthorized;
+}
+export async function amSignOut() {
+  if (amNative) return; // Zugriff lässt sich in der App nur in den iOS-Einstellungen widerrufen
+  const m = await amInstance(); await m.unauthorize();
+}
 
 async function api(path) {
   const m = await amInstance();
@@ -51,10 +96,12 @@ async function all(path) {
   return out;
 }
 export async function amPlaylists() {
+  if (amNative) { await nStart(); return nCall('playlists'); }
   const list = await all('/v1/me/library/playlists');
   return list.map((p) => ({ id: p.id, name: p.attributes?.name || 'Playlist' }));
 }
 export async function amPlaylistTracks(id) {
+  if (amNative) { await nStart(); return nCall('tracks', { id }); }
   const list = await all(`/v1/me/library/playlists/${id}/tracks`);
   return list.map(trackOf);
 }
@@ -70,6 +117,7 @@ function trackOf(t) {
   };
 }
 export async function amSearch(term) {
+  if (amNative) { await nStart(); return nCall('search', { term }); }
   const m = await amInstance();
   const sf = m.storefrontId || 'de';
   const d = await api(`/v1/catalog/${sf}/search?types=songs&limit=25&term=${encodeURIComponent(term)}`);
@@ -78,6 +126,7 @@ export async function amSearch(term) {
 
 // Wiedergabe
 export async function amPlay(track) {
+  if (amNative) { await nStart(); nState = { ...nState, ...(await nCall('play', { id: track.id || '', lib: track.lib || '', dur: track.dur || 0 })) }; return; }
   const m = await amInstance();
   if (m.nowPlayingItem?.id !== track.id && m.nowPlayingItem?.id !== track.lib) {
     try { await m.setQueue({ song: track.id, startPlaying: false }); }
@@ -85,15 +134,30 @@ export async function amPlay(track) {
   }
   await m.play();
 }
-export const amPause = () => mk?.pause();
-export const amSeek = (t) => mk?.seekToTime(Math.max(0, t));
-export const amState = () => ({
+export const amPause = () => (amNative ? nCall('pause').catch(() => {}) : mk?.pause());
+export function amSeek(t) {
+  t = Math.max(0, t);
+  if (amNative) { nState = { ...nState, time: t }; return nCall('seek', { time: t }).catch(() => {}); }
+  return mk?.seekToTime(t);
+}
+// Tempo (nur in der App): 0,5–1,25
+export const amRate = () => nState.rate || 1;
+export function amSetRate(r) {
+  if (!amNative) return Promise.resolve();
+  nState = { ...nState, rate: r };
+  return nCall('rate', { rate: r }).catch(() => {});
+}
+export const amState = () => (amNative ? {
+  playing: !!nState.playing, time: nState.time || 0, dur: nState.dur || 0, id: nState.id || null,
+} : {
   playing: !!mk && mk.playbackState === window.MusicKit?.PlaybackStates?.playing,
   time: mk?.currentPlaybackTime || 0,
   dur: mk?.currentPlaybackDuration || 0,
   id: mk?.nowPlayingItem?.id || null,
 });
-export function amOn(ev, fn) { amInstance().then((m) => m.addEventListener(ev, fn)).catch(() => {}); }
+export function amOn(ev, fn) {
+  if (amNative) { (nListeners[ev] ||= []).push(fn); return; }
+  amInstance().then((m) => m.addEventListener(ev, fn)).catch(() => {}); }
 
 // Titel vergleichbar machen: Kleinbuchstaben, Umlaute, ohne Zusätze wie „(Remastered)“ oder „- Marsch“
 export function normTitle(t) {

@@ -7,7 +7,7 @@ const fmt = (t) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 const audioKey = (id) => `audio|${id}`;
-import { amAvailable, amAuthorize, amInstance, amAuthorized, amPlaylists, amPlaylistTracks, amSearch, amPlay, amPause, amSeek, amState, amOn, normTitle } from './applemusic.js';
+import { amAvailable, amAuthorize, amInstance, amAuthorized, amPlaylists, amPlaylistTracks, amSearch, amPlay, amPause, amSeek, amState, amOn, normTitle, amNative, amRate, amSetRate } from './applemusic.js';
 
 export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange }) {
   const el = new Audio();
@@ -201,11 +201,20 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
         h('button', { class: 'btn round small', 'aria-label': '5 Sekunden zurück', onclick: () => amSeek(amState().time - 5) }, '↺'),
         amUi.playB,
         h('button', { class: 'btn round small', 'aria-label': '5 Sekunden vor', onclick: () => amSeek(amState().time + 5) }, '↻')),
+      ...(amNative ? [amRateRow()] : []),
       h('div', { class: 'pr-row' }, amUi.aB, amUi.bB, h('button', { class: 'btn', onclick: () => { amLoopA = amLoopB = null; amUpdate(); } }, 'Schleife aus')),
       h('div', { class: 'pr-row' },
         h('button', { class: 'btn', onclick: () => { amView = 'pick'; onChange?.rerender?.(); } }, 'Anderes Lied'),
         h('button', { class: 'btn', onclick: async () => { delete s.music.am; await saveScore(s); onChange?.rerender?.(); } }, 'Entfernen')),
     ];
+  }
+  // Tempo für Apple Music (nur in der iPad/iPhone-App über die native Brücke)
+  function amRateRow() {
+    const r0 = amRate();
+    const lbl = h('span', { class: 'pr-a4' }, `${Math.round(r0 * 100)} %`);
+    const inp = h('input', { type: 'range', min: 0.5, max: 1.25, step: 0.05, value: r0, 'aria-label': 'Tempo',
+      oninput: () => { lbl.textContent = `${Math.round(+inp.value * 100)} %`; amSetRate(+inp.value); } });
+    return h('div', { class: 'pr-row' }, h('span', { class: 'pr-label' }, 'Tempo'), inp, lbl);
   }
   function amPicker(s) {
     const listBox = h('div', { class: 'am-list' }, h('p', { class: 'pr-note' }, 'Lade …'));
