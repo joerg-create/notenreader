@@ -262,7 +262,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
       if (mini) {
         panel.classList.add('mini');
         panel.replaceChildren(...mini,
-          h('button', { class: 'mini-b mini-more', type: 'button', 'aria-label': 'Mehr: Lied, Tempo, Schleife', title: 'Mehr', onclick: () => { playMini = false; render(); } }, '•••'),
+          h('button', { class: 'mini-b mini-more', type: 'button', 'aria-label': 'Mehr: Lied, Tempo, Schleife', title: 'Mehr', onclick: (e) => { e.preventDefault(); e.stopPropagation(); requestAnimationFrame(() => { playMini = false; render(); }); } }, '•••'),
           h('button', { class: 'mini-b mini-x', type: 'button', 'aria-label': 'Ausblenden', title: 'Ausblenden (Musik läuft weiter)', onclick: close }, '×'));
         return;
       }
@@ -275,7 +275,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
           h('button', { class: tab === 'metro' ? 'active' : '', onclick: () => { tab = 'metro'; render(); } }, 'Metronom'),
           h('button', { class: tab === 'tuner' ? 'active' : '', onclick: () => { tab = 'tuner'; render(); } }, 'Stimmgerät')),
       h('div', { class: 'pr-head-b' },
-        tab === 'play' && player.hasSong() ? h('button', { class: 'btn icon small', 'aria-label': 'Verkleinern', title: 'Verkleinern', onclick: () => { playMini = true; render(); } }, icon('down')) : null,
+        tab === 'play' && player.hasSong() ? h('button', { class: 'btn icon small', 'aria-label': 'Verkleinern', title: 'Verkleinern', onclick: (e) => { e.preventDefault(); e.stopPropagation(); requestAnimationFrame(() => { playMini = true; render(); }); } }, icon('down')) : null,
         h('button', { class: 'btn icon small', 'aria-label': 'Schließen', onclick: close }, icon('x'))));
     let body;
     if (tab === 'ueben') {

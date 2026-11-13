@@ -494,8 +494,8 @@ body.scanning { overflow: hidden; }
 #practice {
   position: fixed; z-index: 70; right: calc(12px + var(--sar)); bottom: calc(12px + var(--sab));
   width: min(400px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
-  background: rgba(24, 26, 32, .96); color: #f2f2f2; border-radius: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.45);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); padding: 12px 14px 14px;
+  background: rgb(28, 30, 36); color: #f2f2f2; border-radius: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  padding: 12px 14px 14px;
 }
 #practice .btn { background: rgba(255,255,255,.1); border-color: transparent; color: #f2f2f2; }
 #practice .btn.primary { background: var(--accent); color: #1a1406; }
@@ -719,11 +719,11 @@ body.scanning { overflow: hidden; }
 
 /* Mitspielen klein: halb durchsichtige Knöpfe über den Noten */
 #practice.mini { width: auto; padding: 6px; display: flex; gap: 6px; align-items: center; overflow: visible;
-  background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  background: transparent; box-shadow: none;
   right: calc(16px + var(--sar)); bottom: calc(64px + var(--sab)); }
 #practice .mini-b { width: 46px; height: 46px; border-radius: 12px; border: 0; cursor: pointer;
   background: rgba(120, 120, 128, .32); color: rgba(30, 30, 34, .78); font-size: 17px; font-weight: 700; letter-spacing: -2px;
-  display: inline-flex; align-items: center; justify-content: center; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
 #practice .mini-play { width: 54px; height: 54px; font-size: 22px; letter-spacing: 0; }
 #practice .mini-more, #practice .mini-x { width: 36px; height: 36px; font-size: 14px; letter-spacing: 0; opacity: .8; }
 #practice .mini-x { font-size: 20px; }
