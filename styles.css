@@ -482,3 +482,62 @@ body.scanning { overflow: hidden; }
 #retouch-bar::-webkit-scrollbar { display: none; }
 #retouch-bar .stamp-label { flex: none; font-size: 11px; color: #9a9ca6; text-transform: uppercase; letter-spacing: .04em; margin: 0 2px 0 4px; }
 .tool.wide { width: auto; padding: 0 10px; gap: 6px; font-size: 14px; white-space: nowrap; }
+
+/* Metronom und Stimmgerät (1.11) */
+#practice {
+  position: fixed; z-index: 70; right: calc(12px + var(--sar)); bottom: calc(12px + var(--sab));
+  width: min(400px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
+  background: rgba(24, 26, 32, .96); color: #f2f2f2; border-radius: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); padding: 12px 14px 14px;
+}
+#practice .btn { background: rgba(255,255,255,.1); border-color: transparent; color: #f2f2f2; }
+#practice .btn.primary { background: var(--accent); color: #1a1406; }
+#practice .btn.danger { background: #c0392b; color: #fff; }
+#practice select { background: rgba(255,255,255,.1); color: #f2f2f2; border: 0; border-radius: 10px; min-height: 40px; padding: 0 10px; font-size: 15px; flex: 1; min-width: 0; }
+#practice select option { color: #111; }
+.pr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.pr-tabs { display: flex; background: rgba(255,255,255,.08); border-radius: 10px; padding: 3px; }
+.pr-tabs button { border: 0; background: transparent; color: #cfd0d6; padding: 7px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.pr-tabs button.active { background: var(--accent); color: #1a1406; }
+.pr-body { display: flex; flex-direction: column; gap: 12px; }
+.pr-tempo { display: flex; align-items: center; justify-content: space-between; text-align: center; }
+.btn.round { width: 54px; height: 54px; border-radius: 50%; font-size: 28px; padding: 0; justify-content: center; }
+.btn.round.small { width: 38px; height: 38px; min-height: 38px; font-size: 20px; }
+.pr-bpm { font-size: 56px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.pr-sub { font-size: 13px; color: #b9bbc4; }
+#practice input[type=range] { width: 100%; accent-color: var(--accent); }
+.pr-dots { display: flex; justify-content: center; gap: 10px; min-height: 22px; flex-wrap: wrap; }
+.pr-dots .beat { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.15); transition: background .05s; }
+.pr-dots .beat.first { box-shadow: 0 0 0 2px rgba(232,163,61,.6); }
+.pr-dots .beat.on { background: var(--accent); }
+.pr-row { display: flex; align-items: center; gap: 8px; }
+.pr-row .btn { flex: 1; justify-content: center; }
+.pr-row .btn.round { flex: none; }
+.pr-go { min-height: 52px; font-size: 18px; font-weight: 700; justify-content: center; }
+.pr-vol { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #b9bbc4; }
+.pr-note { margin: 0; font-size: 12px; color: #9a9ca6; }
+.pr-label { font-size: 13px; color: #b9bbc4; flex: none; }
+.pr-a4 { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 70px; text-align: center; }
+.pr-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #b9bbc4; }
+.pr-tuner { text-align: center; padding: 6px 0; }
+.pr-big { font-size: 72px; font-weight: 700; line-height: 1; }
+.pr-big sub { font-size: 24px; color: #b9bbc4; margin-left: 2px; }
+.pr-hint { font-size: 16px; font-weight: 600; min-height: 22px; color: #ffb36b; }
+.pr-tuner.intune .pr-hint, .pr-tuner.intune .pr-big { color: #5fd38d; }
+.pr-tuner.idle .pr-big, .pr-tuner.idle .pr-hint, .pr-tuner.idle .pr-meta { opacity: .3; }
+.pr-scale { position: relative; height: 44px; margin: 10px 8px 0; border-bottom: 2px solid rgba(255,255,255,.25); }
+.pr-zone { position: absolute; left: 45%; width: 10%; top: 0; bottom: 0; background: rgba(95,211,141,.22); border-radius: 4px; }
+.pr-scale span { position: absolute; bottom: -20px; font-size: 11px; color: #9a9ca6; transform: translateX(-50%); }
+.pr-scale .l { left: 0; } .pr-scale .c { left: 50%; } .pr-scale .r { left: 100%; }
+.pr-needle { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; left: 50%; background: #ffb36b; border-radius: 2px; transition: left .12s ease-out; }
+.pr-tuner.intune .pr-needle { background: #5fd38d; }
+.pr-meta { justify-content: space-between; margin-top: 22px; }
+#metro-pill {
+  position: fixed; z-index: 70; right: calc(12px + var(--sar)); bottom: calc(70px + var(--sab));
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-radius: 99px; border: 0; cursor: pointer;
+  background: rgba(24,26,32,.9); color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+#metro-pill .pill-dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.3); }
+#metro-pill.flash .pill-dot { background: #fff; }
+#metro-pill.flash.accent .pill-dot { background: var(--accent); }
+#metro-pill .pill-stop { margin-left: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.15); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }

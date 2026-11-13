@@ -2,10 +2,11 @@ import { db } from './db.js';
 import * as pdfjsLib from './vendor/pdf.min.mjs';
 import { indexBackup, collectDocs, collectSetlists, fsList } from './forscore.js';
 import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } from './scan.js';
+import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.10.1';
+const APP_VERSION = '1.11.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -53,6 +54,7 @@ const ICONS = {
   staff: '<path d="M3 5h18M3 9.5h18M3 14h18M3 18.5h18" stroke-width="1.6"/>',
   brush: '<path d="M14 4l6 6-8.5 8.5a3 3 0 01-4.2 0l-1.8-1.8a3 3 0 010-4.2z"/><path d="M4 20l2.5-2.5"/>',
   lasso: '<path d="M7 18c-3-1.5-4-4-4-6.5C3 7 7 4 12 4s9 3 9 7-4 7-9 7c-1.2 0-2.3-.1-3.3-.4" stroke-dasharray="3 2.5"/><path d="M8.7 17.6L7 21"/>',
+  metronome: '<path d="M9 3h6l4 18H5z"/><path d="M12 15l5-9"/><path d="M7.5 15h9"/>',
   rotate: '<path d="M20 12a8 8 0 11-2.3-5.7"/><path d="M20 4v5h-5"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   book: '<path d="M2 4h7a3 3 0 013 3v13a2 2 0 00-2-2H2z"/><path d="M22 4h-7a3 3 0 00-3 3v13a2 2 0 012-2h8z"/>',
@@ -132,6 +134,7 @@ function field(label, input) { return h('label', { class: 'field' }, h('span', {
 
 /* ---------- Daten ---------- */
 let scores = [];
+let practice = null;
 let setlists = [];
 const state = { tab: 'library', query: '', openSetlist: null, filter: { instruments: '', genre: '', tags: '' }, selecting: false, selected: new Set() };
 
@@ -1143,6 +1146,7 @@ async function loadScore(id, page) {
   if (!s) { toast('Stück nicht gefunden'); return; }
   closeDoc();
   R.score = s;
+  practice?.scoreChanged();
   $('#pages').replaceChildren();
   updateReaderInfo();
   try {
@@ -2829,6 +2833,13 @@ function bindUI() {
   $('#r-back').addEventListener('click', closeReader);
   $('#r-view').addEventListener('click', chooseView);
   $('#r-annotate').addEventListener('click', () => setAnnotate(!R.annotate));
+  practice = initPractice({
+    h, icon, settings, saveSettings, toast,
+    getScore: () => (!$('#reader').hidden && R.score) || null,
+    saveScore: (sc) => db.put('scores', sc),
+  });
+  $('#r-practice').addEventListener('click', () => practice.toggle());
+  $('#btn-practice').addEventListener('click', () => practice.toggle());
   $('#a-done').addEventListener('click', () => setAnnotate(false));
   $('#a-undo').addEventListener('click', undoAnno);
   $('#a-clear').addEventListener('click', clearPageAnnos);
