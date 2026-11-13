@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -35,6 +35,7 @@ function h(tag, attrs = {}, ...kids) {
 
 const ICONS = {
   back: '<path d="M15 18l-6-6 6-6"/>',
+  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   chev: '<path d="M9 18l6-6-6-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
@@ -1154,7 +1155,16 @@ function cropEnabled() {
   if (s && typeof s.crop === 'boolean') return s.crop;
   return settings.autoCrop !== false;
 }
+function manualCrop(s, n) {
+  const cb = s?.cropBox;
+  if (!cb) return undefined;
+  return cb.pages?.[n] ?? cb.all; // [x, y, w, h] | 'none' | undefined
+}
 function getCrop(page, n) {
+  const m = manualCrop(R.score, n);
+  if (m === 'none') return null;
+  if (Array.isArray(m)) return m;
+  if (!cropEnabled()) return null;
   if (!R.crops.has(n)) R.crops.set(n, detectCrop(page).catch(() => null));
   return R.crops.get(n);
 }
@@ -1211,6 +1221,178 @@ async function detectCrop(page) {
   const minH = Math.min(1, cw * 0.75);
   if (ch < minH) { ch = minH; if (cy + ch > 1) cy = Math.max(0, 1 - ch); }
   return [cx, cy, cw, ch];
+}
+
+/* Zuschneiden von Hand: Rahmen aufziehen, für alle Seiten oder nur eine Seite.
+   „Ganze Seite“ passt das Blatt ohne Zuschnitt ein, „Automatisch“ nimmt die Erkennung. */
+let cropEdOpen = false;
+async function cropEditor(s, startPage = 1) {
+  if (cropEdOpen || !s) return;
+  cropEdOpen = true;
+  let doc;
+  try {
+    const f = await db.get('files', s.id);
+    doc = await pdfjsLib.getDocument({ data: new Uint8Array(f.data.slice(0)) }).promise;
+  } catch (e) { console.error(e); toast('Die PDF-Datei konnte nicht geöffnet werden'); cropEdOpen = false; return; }
+  const N = doc.numPages;
+  const draft = JSON.parse(JSON.stringify(s.cropBox || {}));
+  draft.pages = draft.pages || {};
+  let pg = Math.min(Math.max(1, startPage), N);
+  let scope = draft.pages[pg] !== undefined ? 'page' : 'all';
+  let rect = null;       // aktueller Rahmen [x, y, w, h]
+  let mode = 'box';      // 'box' | 'none' | 'auto'
+  const autoCache = new Map();
+  const autoFor = async (n) => {
+    if (!autoCache.has(n)) autoCache.set(n, detectCrop(await doc.getPage(n)).catch(() => null));
+    return autoCache.get(n);
+  };
+
+  const root = h('div', { id: 'crop-ed', role: 'dialog', 'aria-label': 'Zuschneiden' });
+  const canvas = h('canvas');
+  const box = h('div', { class: 'ce-box' }, ...['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map((k) => h('span', { class: `ce-h ${k}`, 'data-h': k })));
+  const sheet = h('div', { class: 'ce-sheet' }, canvas, box);
+  const area = h('div', { class: 'ce-area' }, sheet);
+  const pageLbl = h('span', { class: 'ce-page' });
+  const prevB = h('button', { class: 'btn icon', 'aria-label': 'Vorige Seite', onclick: () => go(-1) }, icon('back'));
+  const nextB = h('button', { class: 'btn icon', 'aria-label': 'Nächste Seite', onclick: () => go(1) }, icon('chev'));
+  const scopeAll = h('button', { class: 'seg', onclick: () => setScope('all') }, 'Alle Seiten');
+  const scopePage = h('button', { class: 'seg', onclick: () => setScope('page') }, 'Nur diese Seite');
+  const autoB = h('button', { class: 'btn', onclick: () => setMode('auto') }, 'Automatisch');
+  const noneB = h('button', { class: 'btn', onclick: () => setMode('none') }, 'Ganze Seite');
+  const status = h('div', { class: 'ce-status' });
+  root.append(
+    h('div', { class: 'scan-top' },
+      h('button', { class: 'btn', onclick: () => close() }, 'Abbrechen'),
+      h('div', { class: 'scan-title' }, h('b', {}, 'Zuschneiden'), h('small', {}, s.title)),
+      h('button', { class: 'btn primary', onclick: () => apply() }, 'Übernehmen')),
+    area,
+    h('div', { class: 'ce-bottom' },
+      status,
+      h('div', { class: 'ce-row' }, prevB, pageLbl, nextB, h('div', { class: 'segs' }, scopeAll, scopePage)),
+      h('div', { class: 'ce-row' }, autoB, noneB)));
+  document.body.append(root);
+
+  function stored(n) { return scope === 'page' ? draft.pages[n] : draft.all; }
+  async function loadRect() {
+    const v = stored(pg);
+    if (Array.isArray(v)) { mode = 'box'; rect = v.slice(); }
+    else if (v === 'none') { mode = 'none'; rect = [0, 0, 1, 1]; }
+    else { mode = 'auto'; rect = (await autoFor(pg)) || [0, 0, 1, 1]; rect = rect.slice(); }
+  }
+  function store() {
+    const v = mode === 'box' ? rect.map((x) => +x.toFixed(4)) : mode === 'none' ? 'none' : undefined;
+    if (scope === 'page') { if (v === undefined) delete draft.pages[pg]; else draft.pages[pg] = v; }
+    else { if (v === undefined) delete draft.all; else draft.all = v; }
+  }
+  function paint() {
+    const [x, y, w, hh] = rect;
+    Object.assign(box.style, { left: x * 100 + '%', top: y * 100 + '%', width: w * 100 + '%', height: hh * 100 + '%' });
+    box.classList.toggle('none', mode === 'none');
+    autoB.classList.toggle('active', mode === 'auto');
+    noneB.classList.toggle('active', mode === 'none');
+    scopeAll.classList.toggle('active', scope === 'all');
+    scopePage.classList.toggle('active', scope === 'page');
+    pageLbl.textContent = `Seite ${pg} / ${N}`;
+    prevB.disabled = pg <= 1; nextB.disabled = pg >= N;
+    status.textContent = mode === 'auto' ? 'Automatisch erkannt. Rahmen an den Griffen ziehen zum Anpassen.'
+      : mode === 'none' ? 'Ganze Seite wird eingepasst, ohne Zuschnitt.'
+        : scope === 'all' ? 'Dieser Rahmen gilt für alle Seiten.' : `Dieser Rahmen gilt nur für Seite ${pg}.`;
+  }
+  async function renderPage() {
+    const page = await doc.getPage(pg);
+    const vp1 = page.getViewport({ scale: 1 });
+    const aw = area.clientWidth - 24, ah = area.clientHeight - 24;
+    const sc = Math.min(aw / vp1.width, ah / vp1.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const vp = page.getViewport({ scale: sc * dpr });
+    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    sheet.style.width = Math.floor(vp1.width * sc) + 'px'; sheet.style.height = Math.floor(vp1.height * sc) + 'px';
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  }
+  async function show() { await loadRect(); paint(); await renderPage(); }
+  async function go(d) { pg = Math.min(Math.max(1, pg + d), N); if (scope === 'page' && draft.pages[pg] === undefined) scope = 'all'; await show(); }
+  async function setScope(sc) {
+    if (sc === scope) return;
+    const cur = { mode, rect: rect.slice() };
+    if (sc === 'all') delete draft.pages[pg];
+    scope = sc;
+    // Beim Umschalten den sichtbaren Rahmen übernehmen
+    mode = cur.mode; rect = cur.rect; store(); paint();
+  }
+  async function setMode(m) {
+    mode = m;
+    if (m === 'auto') rect = ((await autoFor(pg)) || [0, 0, 1, 1]).slice();
+    if (m === 'none') rect = [0, 0, 1, 1];
+    store(); paint();
+  }
+
+  // Ziehen: Griffe ändern die Größe, der Rahmen selbst wird verschoben
+  let drag = null;
+  sheet.addEventListener('pointerdown', (e) => {
+    const r = sheet.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    let k = e.target.dataset?.h;
+    if (!k && mode === 'none') {
+      // Bei „Ganze Seite“ neuen Rahmen aufziehen
+      mode = 'box'; rect = [px, py, 0.001, 0.001]; k = 'se';
+    } else if (!k) {
+      const [x, y, w, hh] = rect;
+      if (px < x || px > x + w || py < y || py > y + hh) { mode = 'box'; rect = [px, py, 0.001, 0.001]; k = 'se'; }
+      else k = 'move';
+    }
+    drag = { k, px, py, start: rect.slice() };
+    sheet.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  sheet.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const r = sheet.getBoundingClientRect();
+    const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    const dx = px - drag.px, dy = py - drag.py;
+    let [x, y, w, hh] = drag.start;
+    let x2 = x + w, y2 = y + hh;
+    const k = drag.k;
+    if (k === 'move') {
+      x = Math.min(Math.max(0, x + dx), 1 - w); y = Math.min(Math.max(0, y + dy), 1 - hh); x2 = x + w; y2 = y + hh;
+    } else {
+      if (k.includes('w')) x = Math.min(x + dx, x2 - 0.05);
+      if (k.includes('e')) x2 = Math.max(x2 + dx, x + 0.05);
+      if (k.includes('n')) y = Math.min(y + dy, y2 - 0.05);
+      if (k.includes('s')) y2 = Math.max(y2 + dy, y + 0.05);
+      x = Math.max(0, x); y = Math.max(0, y); x2 = Math.min(1, x2); y2 = Math.min(1, y2);
+    }
+    mode = 'box';
+    rect = [x, y, x2 - x, y2 - y];
+    paint();
+  });
+  const end = () => { if (!drag) return; drag = null; store(); paint(); };
+  sheet.addEventListener('pointerup', end);
+  sheet.addEventListener('pointercancel', end);
+  const onResize = () => renderPage().catch(() => {});
+  window.addEventListener('resize', onResize);
+
+  function close() {
+    window.removeEventListener('resize', onResize);
+    root.remove();
+    doc.destroy();
+    cropEdOpen = false;
+    if (!$('#reader').hidden) showChrome(true);
+  }
+  async function apply() {
+    const clean = {};
+    if (draft.all !== undefined) clean.all = draft.all;
+    if (Object.keys(draft.pages).length) clean.pages = draft.pages;
+    if (Object.keys(clean).length) s.cropBox = clean; else delete s.cropBox;
+    await db.put('scores', s);
+    close();
+    if (!$('#reader').hidden && R.score === s) {
+      R.cropRev = (R.cropRev || 0) + 1;
+      R.cache.clear();
+      renderSpread();
+    }
+    toast('Zuschnitt gesichert');
+  }
+  await show();
 }
 
 function closeDoc() {
@@ -1292,8 +1474,8 @@ function updateReaderInfo() {
 
 async function getPageView(n, maxW, maxH) {
   const mode = viewMode();
-  const cropOn = cropEnabled();
-  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}|${cropOn ? 'c' : ''}`;
+  const cropOn = cropEnabled() || !!R.score?.cropBox;
+  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}|${cropOn ? 'c' + (R.cropRev || 0) : ''}`;
   if (R.cache.has(key)) {
     const v = R.cache.get(key);
     R.cache.delete(key); R.cache.set(key, v);
@@ -2843,7 +3025,8 @@ function renderInbox() {
     h('div', { class: 'inbox-main' },
       h('div', { class: 'inbox-preview' },
         h('button', { class: 'preview-btn', title: 'Im Lesemodus öffnen', onclick: () => openReader([s.id], 0) }, img),
-        h('div', { class: 'note' }, `${s.pages} ${s.pages === 1 ? 'Seite' : 'Seiten'}${s.file ? ' · ' + s.file : ''}`)),
+        h('div', { class: 'note' }, `${s.pages} ${s.pages === 1 ? 'Seite' : 'Seiten'}${s.file ? ' · ' + s.file : ''}`),
+        h('button', { type: 'button', class: 'btn small', onclick: () => cropEditor(s, 1) }, icon('crop'), s.cropBox ? 'Zuschnitt ändern' : 'Zuschneiden')),
       h('form', { class: 'inbox-form', onsubmit: (e) => { e.preventDefault(); save(true); } },
         field('Titel', title),
         h('div', { class: 'field-row' }, field('ID', ref), field('Komponist', composer)),
@@ -2950,6 +3133,7 @@ function bindUI() {
   stage.addEventListener('touchmove', (e) => { if (R.annotate && drawing) e.preventDefault(); }, { passive: false });
   $('#r-back').addEventListener('click', closeReader);
   $('#r-view').addEventListener('click', chooseView);
+  $('#r-crop').addEventListener('click', () => { showChrome(true, false); cropEditor(R.score, R.page); });
   $('#r-annotate').addEventListener('click', () => setAnnotate(!R.annotate));
   practice = initPractice({
     h, icon, settings, saveSettings, toast,

@@ -553,3 +553,30 @@ body.scanning { overflow: hidden; }
 .page canvas.anno { inset: auto; }
 .dlg-sub { margin: 16px 0 6px; font-size: 15px; }
 .dlg-note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Zuschneiden von Hand (1.13) */
+#crop-ed { position: fixed; inset: 0; z-index: 75; background: #15171c; color: #f2f2f2; display: flex; flex-direction: column; }
+#crop-ed .btn { background: rgba(255,255,255,.1); border-color: transparent; color: #f2f2f2; }
+#crop-ed .btn.primary { background: var(--accent); color: #1a1406; }
+#crop-ed .btn.active { background: rgba(232,163,61,.25); color: #ffcf8a; }
+#crop-ed .btn:disabled { opacity: .35; }
+.ce-area { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.ce-sheet { position: relative; background: #fff; touch-action: none; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.ce-sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ce-box { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(10,12,16,.55); cursor: move; }
+.ce-box.none { box-shadow: none; border-style: dashed; }
+.ce-h { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; }
+.ce-h::after { content: ''; position: absolute; inset: 8px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 0 2px #fff; }
+.ce-h.nw { left: 0; top: 0; cursor: nwse-resize; } .ce-h.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.ce-h.sw { left: 0; top: 100%; cursor: nesw-resize; } .ce-h.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.ce-h.n { left: 50%; top: 0; cursor: ns-resize; } .ce-h.s { left: 50%; top: 100%; cursor: ns-resize; }
+.ce-h.w { left: 0; top: 50%; cursor: ew-resize; } .ce-h.e { left: 100%; top: 50%; cursor: ew-resize; }
+.ce-box.none .ce-h { display: none; }
+.ce-bottom { padding: 8px calc(12px + var(--sar)) calc(12px + var(--sab)) calc(12px + var(--sal)); display: flex; flex-direction: column; gap: 8px; }
+.ce-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.ce-page { min-width: 100px; text-align: center; font-variant-numeric: tabular-nums; }
+.ce-status { text-align: center; font-size: 13px; color: #b9bbc4; min-height: 18px; }
+#crop-ed .segs { display: flex; background: rgba(255,255,255,.08); border-radius: 10px; padding: 3px; }
+#crop-ed .seg { border: 0; background: transparent; color: #cfd0d6; padding: 8px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+#crop-ed .seg.active { background: var(--accent); color: #1a1406; }
+.inbox-preview > .btn.small { margin-top: 8px; }
