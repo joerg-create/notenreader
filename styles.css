@@ -700,3 +700,17 @@ body.scanning { overflow: hidden; }
 #r-parts[hidden] { display: none; }
 #reader.locked #r-parts { display: none; }
 .btn.pick.current { border-color: var(--accent); }
+
+/* Einstellungen als Übersicht */
+.settings { width: min(480px, 100%); }
+.set-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.set-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.set-row:last-child { border-bottom: 0; }
+.set-row:active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.set-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-strong, var(--accent)); flex: none; }
+.set-txt { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.set-txt small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-row > .ic:last-child { color: var(--muted); }
+.set-back { margin-bottom: 4px; }
+.set-h { margin: 6px 0 4px; font-size: 20px; }
+.set-foot { margin-top: 16px; }

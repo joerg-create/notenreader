@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.20.0';
+const APP_VERSION = '1.21.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -2784,7 +2784,9 @@ function applyTheme() {
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme()); } catch { /* alt */ }
 applyTheme();
 
-async function openSettings() {
+// Einstellungen: Übersicht mit Bereichen, jeder Bereich als eigene Seite
+const settingsPages = []; // zusätzliche Seiten der iPad-App: { id, title, sub, icon, render(container) }
+async function openSettings(startPage) {
   let storageInfo = '';
   try {
     const est = await navigator.storage?.estimate?.();
@@ -2792,54 +2794,108 @@ async function openSettings() {
     const persisted = await navigator.storage?.persisted?.();
     if (persisted) storageInfo += ' · dauerhaft gespeichert';
   } catch { /* egal */ }
-  const themeGrid = h('div', { class: 'theme-grid' }, THEMES.map(([id, name, sub, [bg, sf, ac, ink]]) => h('button', {
-    type: 'button', class: `theme-card${(settings.theme || 'classic') === id ? ' active' : ''}`,
-    onclick: (e) => { settings.theme = id; saveSettings(); applyTheme(); for (const b of themeGrid.children) b.classList.toggle('active', b === e.currentTarget); },
-  },
-    h('span', { class: 'theme-prev', style: `background:${bg}` },
-      h('span', { class: 'tp-bar', style: `background:${ink}` }),
-      h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-dot', style: `background:${ac}` })),
-      h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-line', style: `background:${ink}` }))),
-    h('b', {}, name), h('small', {}, sub))));
-  const body = h('div', {},
-    h('div', { class: 'section-title' }, 'Design'),
-    themeGrid,
-    h('div', { class: 'seg-row' }, [['auto', 'Automatisch'], ['light', 'Hell'], ['dark', 'Dunkel']].map(([v, l]) => h('label', { class: 'seg-opt' },
-      h('input', { type: 'radio', name: 'sappear', value: v, checked: (settings.appearance || 'auto') === v, onchange: () => { settings.appearance = v; saveSettings(); applyTheme(); } }),
-      h('span', {}, l)))),
-    h('div', { class: 'section-title' }, 'Ansicht beim Lesen'),
-    h('div', { class: 'choice' }, [
-      ['auto', 'Ganze Seite', 'Im Querformat auf großen Bildschirmen zwei Seiten nebeneinander.'],
-      ['single', 'Immer eine Seite', ''],
-      ['width', 'Breite füllen', 'Zum Lesen auf dem iPhone im Querformat.'],
-    ].map(([v, t, d]) => h('label', {},
-      h('input', { type: 'radio', name: 'sview', value: v, checked: settings.view === v, onchange: () => { settings.view = v; saveSettings(); } }),
-      h('div', {}, h('b', {}, t), d ? h('small', {}, d) : null)))),
-    h('label', { class: 'check-row' },
-      h('input', { type: 'checkbox', checked: settings.fullscreen !== false, onchange: (e) => { settings.fullscreen = e.target.checked; saveSettings(); } }),
-      h('span', {}, h('b', {}, 'Vollbild beim Lesen'), h('br'), h('small', { class: 'note' }, 'Blendet auf dem iPad Uhrzeit und Statusleiste aus. Auf dem iPhone lässt Apple das nicht zu.'))),
-    h('div', { class: 'section-title' }, 'Bildschirm anlassen'),
-    h('div', { class: 'choice' }, [
-      ['reading', 'Beim Lesen', 'Solange Noten offen sind, geht der Bildschirm nicht aus.'],
-      ['always', 'Immer', 'Solange der Notenreader geöffnet ist, auch in der Übersicht.'],
-      ['off', 'Aus', 'Der Bildschirm geht wie eingestellt automatisch aus.'],
-    ].map(([v, t, d]) => h('label', {},
-      h('input', { type: 'radio', name: 'sawake', value: v, checked: (settings.keepAwake || 'reading') === v, onchange: () => { settings.keepAwake = v; saveSettings(); updateKeepAwake(); } }),
-      h('div', {}, h('b', {}, t), h('small', {}, d))))),
-    h('div', { class: 'section-title' }, 'Umblättern'),
-    h('p', { class: 'note' }, 'Tippen auf den rechten oder linken Rand, Wischen, oder ein Bluetooth-Pedal bzw. eine Tastatur (Pfeiltasten, Bild auf/ab, Leertaste).'),
-    h('div', { class: 'section-title' }, 'Abgleich mit anderen Geräten'),
-    h('p', { class: 'note' }, 'Tags, Anmerkungen, Setlists und neue Noten zwischen iPads austauschen: hier exportieren und die Datei in iCloud Drive sichern, auf dem anderen Gerät einlesen. Die jeweils neuere Änderung gewinnt.'),
-    h('div', { class: 'menu' },
-      h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportSync(); } }, icon('upload'), 'Abgleich exportieren'),
-      pickOption({ iconName: 'download', title: 'Abgleich einlesen', sub: settings.syncLastExport ? `Zuletzt exportiert: ${new Date(settings.syncLastExport).toLocaleString('de-DE')}` : 'Datei(en) „Notenreader-Abgleich …“ vom anderen Gerät, bei mehreren Teilen alle markieren', accept: '.json,application/json', multiple: true, onFiles: (f) => importFiles2(f) })),
-    h('div', { class: 'section-title' }, 'Sicherung'),
-    h('p', { class: 'note' }, 'Deine Noten liegen nur in diesem Browser auf diesem Gerät. Eine Sicherung enthält alle PDFs, Anmerkungen und Setlists und lässt sich auf einem anderen Gerät wieder einlesen.'),
-    h('div', { class: 'menu' },
-      h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportBackup(); } }, icon('download'), 'Sicherung exportieren'),
-      pickOption({ iconName: 'upload', title: 'Sicherung einlesen', sub: 'Notenreader-Sicherung (.json)', accept: '.json,application/json', onFiles: (f) => importBackup(f[0]) })),
-    h('p', { class: 'note' }, `${scores.length} Stücke, ${setlists.length} Setlists. ${storageInfo}`),
-    h('p', { class: 'note' }, `Notenreader ${APP_VERSION} · PDF-Darstellung mit PDF.js (Apache-2.0)`));
+  const radios = (name, opts, cur, onPick) => h('div', { class: 'choice' }, opts.map(([v, t, d]) => h('label', {},
+    h('input', { type: 'radio', name, value: v, checked: cur === v, onchange: () => onPick(v) }),
+    h('div', {}, h('b', {}, t), d ? h('small', {}, d) : null))));
+  const check = (on, title, sub, onChange) => h('label', { class: 'check-row' },
+    h('input', { type: 'checkbox', checked: on, onchange: (e) => onChange(e.target.checked) }),
+    h('span', {}, h('b', {}, title), sub ? [h('br'), h('small', { class: 'note' }, sub)] : null));
+  const viewName = { auto: 'Ganze Seite', single: 'Immer eine Seite', width: 'Breite füllen' };
+  const themeName = () => (THEMES.find((t) => t[0] === (settings.theme || 'classic')) || THEMES[0])[1];
+  const apName = { auto: 'automatisch hell/dunkel', light: 'hell', dark: 'dunkel' };
+  const awakeName = { reading: 'beim Lesen an', always: 'immer an', off: 'geht aus' };
+  const nightName = { off: 'aus', on: 'an', auto: 'wie das Gerät' };
+
+  const pages = [
+    { id: 'look', icon: 'grid', title: 'Darstellung', sub: () => `${themeName()}, ${apName[settings.appearance || 'auto']}, Nachtansicht ${nightName[settings.night || 'off']}`, render: () => {
+      const themeGrid = h('div', { class: 'theme-grid' }, THEMES.map(([id, name, sub, [bg, sf, ac, ink]]) => h('button', {
+        type: 'button', class: `theme-card${(settings.theme || 'classic') === id ? ' active' : ''}`,
+        onclick: (e) => { settings.theme = id; saveSettings(); applyTheme(); for (const b of themeGrid.children) b.classList.toggle('active', b === e.currentTarget); },
+      },
+        h('span', { class: 'theme-prev', style: `background:${bg}` },
+          h('span', { class: 'tp-bar', style: `background:${ink}` }),
+          h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-dot', style: `background:${ac}` })),
+          h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-line', style: `background:${ink}` }))),
+        h('b', {}, name), h('small', {}, sub))));
+      return [
+        h('div', { class: 'section-title' }, 'Farben'), themeGrid,
+        h('div', { class: 'section-title' }, 'Hell oder dunkel'),
+        h('div', { class: 'seg-row' }, [['auto', 'Automatisch'], ['light', 'Hell'], ['dark', 'Dunkel']].map(([v, l]) => h('label', { class: 'seg-opt' },
+          h('input', { type: 'radio', name: 'sappear', value: v, checked: (settings.appearance || 'auto') === v, onchange: () => { settings.appearance = v; saveSettings(); applyTheme(); } }),
+          h('span', {}, l)))),
+        h('div', { class: 'section-title' }, 'Nachtansicht für Noten'),
+        h('div', { class: 'seg-row' }, [['off', 'Aus'], ['on', 'An'], ['auto', 'Wie das Gerät']].map(([v, l]) => h('label', { class: 'seg-opt' },
+          h('input', { type: 'radio', name: 'snight', value: v, checked: (settings.night || 'off') === v, onchange: () => { settings.night = v; saveSettings(); applyNight(); } }), h('span', {}, l)))),
+        h('p', { class: 'note' }, 'Helle Noten auf dunklem Grund. Beim Lesen auch über den Mond-Knopf.'),
+      ];
+    } },
+    { id: 'read', icon: 'book', title: 'Lesen und Umblättern', sub: () => `${viewName[settings.view] || 'Ganze Seite'}${settings.halfTurn ? ', halbe Seite' : ''}, Bildschirm ${awakeName[settings.keepAwake || 'reading']}`, render: () => [
+      h('div', { class: 'section-title' }, 'Ansicht'),
+      radios('sview', [
+        ['auto', 'Ganze Seite', 'Im Querformat auf großen Bildschirmen zwei Seiten nebeneinander.'],
+        ['single', 'Immer eine Seite', ''],
+        ['width', 'Breite füllen', 'Zum Lesen auf dem iPhone im Querformat.'],
+      ], settings.view, (v) => { settings.view = v; saveSettings(); }),
+      check(settings.autoCrop !== false, 'Weiße Ränder abschneiden', 'Vergrößert den Notenbereich auf die ganze Anzeige. Pro Stück unter Ansicht änderbar.', (on) => { settings.autoCrop = on; saveSettings(); R.cache.clear(); }),
+      h('div', { class: 'section-title' }, 'Umblättern'),
+      check(!!settings.halfTurn, 'Halbe Seite umblättern', 'Erst kommt oben der Anfang der nächsten Seite, das Ende der aktuellen bleibt unten stehen.', (on) => { settings.halfTurn = on; saveSettings(); }),
+      h('p', { class: 'note' }, 'Umblättern geht mit Tippen auf den rechten oder linken Rand, Wischen, einem Bluetooth-Pedal oder einer Tastatur (Pfeiltasten, Bild auf/ab, Leertaste).'),
+      h('p', { class: 'note' }, 'Auftrittsmodus: in der Leseansicht das Schloss antippen, dann geht nur noch Umblättern. Zum Entsperren das Schloss gedrückt halten.'),
+      h('div', { 'data-settings-slot': 'lesen' }),
+      h('div', { class: 'section-title' }, 'Bildschirm'),
+      check(settings.fullscreen !== false, 'Vollbild beim Lesen', 'Blendet auf dem iPad Uhrzeit und Statusleiste aus.', (on) => { settings.fullscreen = on; saveSettings(); }),
+      radios('sawake', [
+        ['reading', 'Beim Lesen anlassen', 'Solange Noten offen sind, geht der Bildschirm nicht aus.'],
+        ['always', 'Immer anlassen', 'Auch in der Übersicht.'],
+        ['off', 'Normal ausgehen lassen', ''],
+      ], settings.keepAwake || 'reading', (v) => { settings.keepAwake = v; saveSettings(); updateKeepAwake(); }),
+    ] },
+    { id: 'sync', icon: 'upload', title: 'Abgleich und Sicherung', slot: 'abgleich', sub: () => (settings.syncLastExport ? `Letzter Abgleich: ${new Date(settings.syncLastExport).toLocaleDateString('de-DE')}` : 'Noten zwischen Geräten austauschen, sichern'), render: () => [
+      h('div', { 'data-settings-slot': 'abgleich' }),
+      h('div', { class: 'section-title' }, 'Abgleich per Datei'),
+      h('p', { class: 'note' }, 'Tags, Anmerkungen, Setlists und neue Noten per Datei austauschen: hier exportieren, in iCloud Drive sichern und auf dem anderen Gerät einlesen. Die neuere Änderung gewinnt.'),
+      h('div', { class: 'menu' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportSync(); } }, icon('upload'), 'Abgleich exportieren'),
+        pickOption({ iconName: 'download', title: 'Abgleich einlesen', sub: 'Bei mehreren Teilen alle markieren', accept: '.json,application/json', multiple: true, onFiles: (f) => importFiles2(f) })),
+      h('div', { class: 'section-title' }, 'Sicherung'),
+      h('p', { class: 'note' }, 'Eine Sicherung enthält alle PDFs, Anmerkungen und Setlists dieses Geräts.'),
+      h('div', { class: 'menu' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportBackup(); } }, icon('download'), 'Sicherung exportieren'),
+        pickOption({ iconName: 'upload', title: 'Sicherung einlesen', sub: 'Notenreader-Sicherung (.json)', accept: '.json,application/json', onFiles: (f) => importBackup(f[0]) })),
+    ] },
+    { id: 'about', icon: 'more', title: 'Über die App', sub: () => `Version ${APP_VERSION}, ${scores.length} Stücke`, render: () => [
+      h('p', {}, `Notenreader ${APP_VERSION}`),
+      h('p', { class: 'note' }, `${scores.length} Stücke, ${setlists.length} Setlists. ${storageInfo}`),
+      h('p', { class: 'note' }, 'PDF-Darstellung mit PDF.js (Apache-2.0), Notenschrift Bravura (SIL Open Font License).'),
+    ] },
+  ];
+  const appPages = settingsPages.map((p) => ({ ...p, sub: () => (typeof p.sub === 'function' ? p.sub() : p.sub || ''), native: true }));
+  const body = h('div', { class: 'settings' });
+  const row = (p) => h('button', { type: 'button', class: 'set-row', onclick: () => show(p) },
+    h('span', { class: 'set-ic' }, icon(p.icon || 'sliders')),
+    h('span', { class: 'set-txt' }, h('b', {}, p.title), h('small', {}, p.sub())),
+    icon('chev'));
+  const showMain = () => {
+    body.replaceChildren(...[
+      h('div', { class: 'set-list' }, pages.map(row)),
+      appPages.length ? h('div', { class: 'section-title' }, 'iPad-App') : null,
+      appPages.length ? h('div', { class: 'set-list' }, appPages.map(row)) : null,
+    ].filter(Boolean));
+    window.dispatchEvent(new CustomEvent('notenreader-settings', { detail: { page: 'main', container: body } }));
+  };
+  const show = (p) => {
+    const box = h('div', { class: 'set-page' });
+    body.replaceChildren(
+      h('button', { type: 'button', class: 'btn small set-back', onclick: showMain }, icon('back'), 'Einstellungen'),
+      h('h3', { class: 'set-h' }, p.title), box);
+    if (p.native) { try { p.render(box); } catch (e) { console.error(e); box.append(h('p', { class: 'note' }, 'Dieser Bereich lässt sich gerade nicht anzeigen.')); } }
+    else box.append(...[p.render()].flat().filter(Boolean));
+    // Die iPad-App füllt die Platzhalter [data-settings-slot] (lesen, abgleich) selbst
+    window.dispatchEvent(new CustomEvent('notenreader-settings', { detail: { page: p.id, container: box } }));
+    body.closest('.dlg-body, form')?.scrollTo?.(0, 0);
+  };
+  const start = [...pages, ...appPages].find((p) => p.id === startPage);
+  if (start) show(start); else showMain();
   await dialog({ title: 'Einstellungen', body, actions: [{ label: 'Fertig', value: null, primary: true }] });
 }
 
@@ -3655,4 +3711,12 @@ window.notenreaderApp = {
     return importSync(obj, { quiet: true });
   },
   onChange(fn) { if (typeof fn === 'function') changeListeners.push(fn); },
+  // Eigene Einstellungs-Seite der iPad-App: { id, title, sub (Text oder Funktion), icon, render(container) }
+  addSettingsPage(page) {
+    if (!page?.id || typeof page.render !== 'function') return false;
+    const i = settingsPages.findIndex((p) => p.id === page.id);
+    if (i >= 0) settingsPages[i] = page; else settingsPages.push(page);
+    return true;
+  },
+  openSettings: (id) => openSettings(id),
 };

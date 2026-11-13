@@ -2,7 +2,7 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.20)
+## Was sie kann (Version 1.21)
 - **Designs:** Einstellungen → Design: Klassisch, Blau, Salbei, Bordeaux oder Kontrast, jeweils hell, dunkel oder automatisch. **Musik** hat jetzt einen eigenen Knopf (Notensymbol) neben dem Metronom, auf der Hauptseite und in der Leseansicht.
 - **Apple Music im Notenreader:** Im Reiter „Mitspielen“ einmal pro Gerät „Mit Apple Music anmelden“. Dann „Lied zuordnen“: Playlist wählen, Lied antippen (oder im Katalog suchen). „Alle Stücke automatisch zuordnen“ verbindet alle Stücke, deren Titel zu einem Lied der Playlist passt. Abspielen, Vor-/Zurückspringen und Wiederholschleife A–B direkt im Notenreader (Apple-Music-Abo nötig; langsamer abspielen geht bei Apple-Music-Liedern nicht). Der Zugangscode in musickit-token.js läuft nach sechs Monaten ab und muss dann mit dem Schlüssel AuthKey_A7JT5LJCYW.p8 neu erzeugt werden.
 - **Mitspielen:** Im Metronom-Fenster der Reiter „Mitspielen“. Pro Stück einen Apple-Music-Link speichern (in der Musik-App beim Lied „Teilen → Link kopieren“), der Knopf öffnet das Lied dann in Apple Music. Oder eine eigene Audiodatei (MP3, M4A, WAV) hinterlegen: Die spielt der Notenreader selbst, mit Tempo 50–125 % ohne Tonhöhenänderung und Wiederholschleife A–B. Läuft beim Blättern weiter, unten rechts eine kleine Anzeige zum Stoppen.
