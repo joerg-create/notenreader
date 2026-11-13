@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.21.1';
+const APP_VERSION = '1.21.2';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -74,6 +74,7 @@ const ICONS = {
   jump: '<path d="M4 17V9a5 5 0 015-5h6"/><path d="M12 1l3 3-3 3"/><path d="M14 13h6v6"/><path d="M20 13l-8 8"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   parts: '<rect x="7" y="3" width="13" height="15" rx="1.5"/><path d="M4 7v12.5A1.5 1.5 0 005.5 21H15"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
   unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.8-1.2"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -2891,7 +2892,10 @@ async function openSettings(startPage) {
       h('button', { type: 'button', class: 'btn small set-back', onclick: showMain }, icon('back'), 'Einstellungen'),
       h('h3', { class: 'set-h' }, p.title), box);
     if (p.native) { try { p.render(box); } catch (e) { console.error(e); box.append(h('p', { class: 'note' }, 'Dieser Bereich lässt sich gerade nicht anzeigen.')); } }
-    else box.append(...[p.render()].flat().filter(Boolean));
+    else {
+      try { box.append(...[p.render()].flat().filter(Boolean)); }
+      catch (e) { console.error(e); box.append(h('p', { class: 'note' }, 'Fehler: ' + (e?.message || e))); }
+    }
     // Die iPad-App füllt die Platzhalter [data-settings-slot] (lesen, abgleich) selbst
     window.dispatchEvent(new CustomEvent('notenreader-settings', { detail: { page: p.id, container: box } }));
     body.closest('.dlg-body, form')?.scrollTo?.(0, 0);
@@ -3568,7 +3572,9 @@ function bindUI() {
   }
   $('#progress-cancel').addEventListener('click', () => { importCancel = true; $('#progress-text').textContent = 'Wird abgebrochen …'; });
   $('#backup-input').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) importBackup(f).finally(() => { e.target.value = ''; }); });
-  $('#btn-settings').addEventListener('click', openSettings);
+  $('#btn-settings').addEventListener('click', () => {
+    openSettings().catch((e) => { console.error(e); toast('Einstellungen: ' + (e?.message || e), 6000); });
+  });
   $('#btn-select').addEventListener('click', () => setSelecting(!state.selecting));
   $('#sel-done').addEventListener('click', () => setSelecting(false));
   $('#sel-all').addEventListener('click', () => {
