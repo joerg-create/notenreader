@@ -54,7 +54,10 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   const st = {
     bpm: settings.metroBpm || 100, beats: settings.metroBeats || 4, sub: settings.metroSub || 1,
     vol: settings.metroVol ?? 0.8, a4: settings.tunerA4 || 443, trans: settings.tunerTrans || 'C',
+    // Tempo-Trainer: alle `every` Takte um `step` BPM schneller, bis `target`
+    train: { on: false, every: 4, step: 2, target: 120, ...(settings.metroTrain || {}) },
   };
+  const saveTrain = () => { settings.metroTrain = { ...st.train }; saveSettings(); };
   const save = () => {
     Object.assign(settings, { metroBpm: st.bpm, metroBeats: st.beats, metroSub: st.sub, metroVol: st.vol, tunerA4: st.a4, tunerTrans: st.trans });
     saveSettings();
@@ -63,7 +66,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   };
 
   /* ----- Metronom ----- */
-  let running = false, timer = null, nextTime = 0, tick = 0;
+  let running = false, timer = null, nextTime = 0, tick = 0, startBpm = 0, bars = 0;
   const queue = []; // { time, beat, sub }
   function click(time, kind) {
     const ac = audio();
@@ -79,9 +82,16 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   }
   function schedule() {
     const ac = audio();
-    const step = 60 / st.bpm / st.sub;
     while (nextTime < ac.currentTime + 0.12) {
       const sub = tick % st.sub, beat = Math.floor(tick / st.sub) % st.beats;
+      if (tick && sub === 0 && beat === 0 && st.train.on) {
+        bars++;
+        if (bars % Math.max(1, st.train.every) === 0 && st.bpm < st.train.target) {
+          st.bpm = Math.min(st.train.target, st.bpm + Math.max(1, st.train.step));
+          setTimeout(liveBpm, 0);
+        }
+      }
+      const step = 60 / st.bpm / st.sub;
       const kind = sub ? 2 : beat === 0 && st.beats > 1 ? 0 : 1;
       click(nextTime, kind);
       queue.push({ time: nextTime, beat, sub });
@@ -92,7 +102,8 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   function start() {
     audioSession('playback');
     const ac = audio();
-    running = true; tick = 0; nextTime = ac.currentTime + 0.06; queue.length = 0;
+    running = true; tick = 0; bars = 0; nextTime = ac.currentTime + 0.06; queue.length = 0;
+    startBpm = st.bpm;
     schedule();
     timer = setInterval(schedule, 25);
     requestAnimationFrame(draw);
@@ -101,6 +112,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   }
   function stop() {
     running = false; clearInterval(timer); timer = null; queue.length = 0;
+    if (st.train.on && startBpm) st.bpm = startBpm; // Trainer beginnt beim nächsten Mal wieder beim Starttempo
     render();
   }
   let lastBeat = -1;
@@ -117,7 +129,12 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     pill.classList.toggle('flash', b >= 0);
     if (b >= 0) { pill.classList.toggle('accent', b === 0); setTimeout(() => pill.classList.remove('flash'), 90); }
   }
-  const setBpm = (v) => { st.bpm = Math.max(20, Math.min(300, Math.round(v))); if (running) save(); render(); };
+  const setBpm = (v) => { st.bpm = Math.max(20, Math.min(300, Math.round(v))); if (running) { startBpm = st.bpm; bars = 0; if (!st.train.on) save(); } render(); };
+  let liveEls = null;
+  function liveBpm() {
+    if (pill.childNodes[1]) pill.childNodes[1].textContent = String(st.bpm);
+    if (liveEls) { liveEls.bpm.textContent = st.bpm; liveEls.name.textContent = tempoName(st.bpm); liveEls.slider.value = st.bpm; }
+  }
   let taps = [];
   function tap() {
     const t = performance.now();
@@ -232,6 +249,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
 
   function render() {
     const s = getScore();
+    liveEls = null;
     pill.hidden = !(running && panel.hidden);
     pill.replaceChildren(h('span', { class: 'pill-dot' }), `${st.bpm}`, h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); stop(); } }, '■'));
     if (panel.hidden) return;
@@ -256,6 +274,21 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
         [[1, 'Viertel'], [2, 'Achtel'], [3, 'Triolen'], [4, 'Sechzehntel']].map(([v, l]) => h('option', { value: v }, l)));
       subSel.value = st.sub;
       const vol = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: st.vol, 'aria-label': 'Lautstärke', oninput: () => { st.vol = +vol.value; }, onchange: save });
+      liveEls = { bpm: bpmEl, name: nameEl, slider };
+      const num = (key, min, max, label) => {
+        const el = h('input', { type: 'number', inputmode: 'numeric', min, max, value: st.train[key], 'aria-label': label,
+          onchange: () => { st.train[key] = Math.max(min, Math.min(max, Math.round(+el.value || min))); el.value = st.train[key]; saveTrain(); } });
+        return el;
+      };
+      const trainOn = h('input', { type: 'checkbox', checked: st.train.on, onchange: () => {
+        st.train.on = trainOn.checked;
+        if (st.train.on && st.train.target <= st.bpm) st.train.target = Math.min(300, st.bpm + 20);
+        saveTrain(); render();
+      } });
+      const trainer = h('div', { class: `pr-train${st.train.on ? ' on' : ''}` },
+        h('label', { class: 'pr-train-head' }, trainOn, h('span', {}, h('b', {}, 'Tempo-Trainer'), h('small', {}, st.train.on ? (running ? ` · Start ${startBpm}, Ziel ${st.train.target}` : ` · von ${st.bpm} bis ${st.train.target}`) : ' · langsam anfangen, von selbst schneller werden'))),
+        st.train.on ? h('div', { class: 'pr-train-row' },
+          'alle', num('every', 1, 64, 'Takte'), 'Takte um', num('step', 1, 20, 'BPM'), 'schneller, bis', num('target', 30, 300, 'Ziel-Tempo')) : null);
       body = h('div', { class: 'pr-body' },
         h('div', { class: 'pr-tempo' },
           h('button', { class: 'btn round', 'aria-label': 'Langsamer', onclick: () => setBpm(st.bpm - 1) }, '−'),
@@ -267,6 +300,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
         h('div', { class: 'pr-row' },
           h('button', { class: 'btn', onclick: tap }, 'Tippen (Tap)'),
           h('button', { class: `btn ${running ? 'danger' : 'primary'} pr-go`, onclick: () => (running ? stop() : start()) }, running ? 'Stopp' : 'Start')),
+        trainer,
         h('label', { class: 'pr-vol' }, h('span', {}, 'Lautstärke'), vol),
         s ? h('p', { class: 'pr-note' }, `Das Tempo wird für „${s.title}“ gemerkt.`) : null);
     } else {

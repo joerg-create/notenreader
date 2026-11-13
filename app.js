@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.16.2';
+const APP_VERSION = '1.17.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -71,6 +71,8 @@ const ICONS = {
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.8-1.2"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
 };
 function icon(name) {
@@ -1550,6 +1552,7 @@ async function renderSpread({ scrollTo = 'top' } = {}) {
   try { views = await Promise.all(nums.map((x) => getPageView(x, slotW, hgt))); }
   catch (e) { console.error(e); if (token === R.renderToken) toast('Seite konnte nicht dargestellt werden'); return; }
   if (token !== R.renderToken) return;
+  clearHalf();
   $('#pages').replaceChildren(...views.map((v) => v.wrap));
   st.scrollTop = scrollTo === 'bottom' ? st.scrollHeight : 0;
   updateReaderInfo();
@@ -1571,9 +1574,70 @@ function flashEdge(side) {
   requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('on')));
 }
 
+// Halbe Seite: oben erscheint schon der Anfang der nächsten Seite, unten bleibt das Ende der aktuellen
+const halfMode = () => settings.halfTurn && !isTwoUp() && viewMode() !== 'width';
+function clearHalf() {
+  R.half = false;
+  for (const el of $$('#pages .half-ov')) el.parentNode.removeChild(el);
+}
+// Leere Zeilen (ohne Noten) einer Seite, als Anteil 0..1 der Höhe, in 200 Schritten
+function blankRows(canvas) {
+  const N = 200, out = new Uint8Array(N);
+  try {
+    const w = 120, t = document.createElement('canvas');
+    t.width = w; t.height = N;
+    const c = t.getContext('2d', { willReadFrequently: true });
+    c.drawImage(canvas, 0, 0, w, N);
+    const d = c.getImageData(0, 0, w, N).data;
+    for (let y = 0; y < N; y++) {
+      let dark = 0;
+      for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; if (d[i] + d[i + 1] + d[i + 2] < 600) dark++; }
+      out[y] = dark <= 1 ? 1 : 0;
+    }
+  } catch { out.fill(1); }
+  return out;
+}
+// Schnitt möglichst in einer Lücke zwischen zwei Notenzeilen, nahe der Mitte
+function halfCut(curCanvas, nextCanvas, k) {
+  const a = blankRows(curCanvas), b = blankRows(nextCanvas);
+  const N = 200, ratio = (parseFloat(nextCanvas.style.height) * k) / parseFloat(curCanvas.style.height);
+  const ok = (y, both) => { const yb = Math.round(y / ratio); return (yb < N ? b[yb] : 1) && (!both || a[y]); };
+  for (const both of [true, false]) {
+    for (let d = 0; d <= N * 0.2; d++) for (const y of [N / 2 - d, N / 2 + d]) if (ok(y, both)) return y / N;
+  }
+  return 0.5;
+}
+async function showHalf() {
+  const cur = $('#pages .page');
+  if (!cur?.view) return false;
+  const { w, h: hgt } = stageSize();
+  const next = await getPageView(R.page + 1, w, hgt);
+  const nw = parseFloat(next.canvas.style.width), nh = parseFloat(next.canvas.style.height);
+  const bw = cur.offsetWidth, k = bw / nw;
+  const bh = Math.round(cur.offsetHeight * halfCut(cur.view.canvas, next.canvas, k));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const cv = h('canvas', { class: 'half-ov' });
+  cv.width = Math.round(bw * dpr); cv.height = Math.round(bh * dpr);
+  cv.style.width = bw + 'px'; cv.style.height = bh + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, bw, bh);
+  ctx.drawImage(next.canvas, 0, 0, nw * k, nh * k);
+  const offX = -parseFloat(next.anno.style.left) || 0, offY = -parseFloat(next.anno.style.top) || 0;
+  if (next.anno.width) ctx.drawImage(next.anno, -offX * k, -offY * k, next.cssW * k, next.cssH * k);
+  clearHalf();
+  cur.append(cv);
+  R.half = true;
+  $('#r-page').textContent = `${R.page}/${R.page + 1} / ${R.doc.numPages}`;
+  return true;
+}
+
 async function goNext() {
   if (!R.doc) return;
   const st = $('#stage');
+  if (halfMode() && !R.half && R.page < R.doc.numPages) {
+    if (await showHalf()) return;
+  }
   if (viewMode() === 'width' && st.scrollTop + st.clientHeight < st.scrollHeight - 4) {
     st.scrollBy({ top: st.clientHeight * 0.85, behavior: 'smooth' });
     return;
@@ -1593,6 +1657,7 @@ async function goNext() {
 async function goPrev() {
   if (!R.doc) return;
   const st = $('#stage');
+  if (R.half) { clearHalf(); updateReaderInfo(); return; }
   if (viewMode() === 'width' && st.scrollTop > 4) {
     st.scrollBy({ top: -st.clientHeight * 0.85, behavior: 'smooth' });
     return;
@@ -1631,10 +1696,13 @@ async function chooseView() {
   ];
   const cropThis = h('input', { type: 'checkbox', checked: cropEnabled() });
   const cropAll = h('input', { type: 'checkbox', checked: settings.autoCrop !== false });
+  const halfTurn = h('input', { type: 'checkbox', checked: !!settings.halfTurn });
   const body = h('div', {},
     h('div', { class: 'choice' }, opts.map(([v, t, d]) => h('label', {},
       h('input', { type: 'radio', name: 'view', value: v, checked: settings.view === v }),
       h('div', {}, h('b', {}, t), h('small', {}, d))))),
+    h('h4', { class: 'dlg-sub' }, 'Umblättern'),
+    h('label', { class: 'check-row' }, halfTurn, h('span', {}, 'Halbe Seite umblättern', h('small', { class: 'sub' }, 'Erst kommt oben der Anfang der nächsten Seite, das Ende der aktuellen bleibt unten stehen. Nur bei einer Seite auf dem Bildschirm.'))),
     h('h4', { class: 'dlg-sub' }, 'Weiße Ränder abschneiden'),
     h('label', { class: 'check-row' }, cropThis, h('span', {}, R.score ? `Bei „${R.score.title}“` : 'Bei diesem Stück')),
     h('label', { class: 'check-row' }, cropAll, h('span', {}, 'Standard für alle Stücke')),
@@ -1648,6 +1716,7 @@ async function chooseView() {
       if (isTwoUp() && R.page % 2 === 0) R.page = Math.max(1, R.page - 1);
       changed = true;
     }
+    if (halfTurn.checked !== !!settings.halfTurn) { settings.halfTurn = halfTurn.checked; saveSettings(); if (R.half) { clearHalf(); updateReaderInfo(); } }
     const wasCrop = cropEnabled();
     if (cropAll.checked !== (settings.autoCrop !== false)) { settings.autoCrop = cropAll.checked; changed = true; }
     if (R.score) {
@@ -1922,6 +1991,7 @@ async function drawAnnos(view) {
 }
 
 function setAnnotate(on) {
+  if (on && settings.locked) { lockHint(); return; }
   R.annotate = on;
   $('#anno-bar').hidden = !on;
   $('#reader-top').hidden = on;
@@ -2289,6 +2359,42 @@ async function clearPageAnnos() {
   toast(any ? 'Anmerkungen entfernt (Rückgängig möglich)' : 'Keine Anmerkungen auf dieser Seite');
 }
 
+/* ---------- Auftrittsmodus: nur noch Umblättern ---------- */
+function applyLock() {
+  const on = !!settings.locked;
+  $('#reader').classList.toggle('locked', on);
+  const b = $('#r-lock');
+  b.replaceChildren(icon(on ? 'lock' : 'unlock'));
+  b.classList.toggle('active', on);
+  b.setAttribute('aria-label', on ? 'Auftrittsmodus beenden (gedrückt halten)' : 'Auftrittsmodus');
+  b.title = on ? 'Auftrittsmodus: zum Beenden gedrückt halten' : 'Auftrittsmodus: alles sperren außer Umblättern';
+}
+function lockHint() { toast('Auftrittsmodus: zum Entsperren das Schloss gedrückt halten'); }
+function setLocked(on) {
+  if (on && R.annotate) setAnnotate(false);
+  settings.locked = on; saveSettings();
+  applyLock();
+  if (on && practice?.isOpen?.()) practice.close();
+  toast(on ? 'Auftrittsmodus an: nur noch Umblättern' : 'Auftrittsmodus aus');
+}
+function initLockButton() {
+  const b = $('#r-lock');
+  let timer = null, fired = false;
+  b.addEventListener('pointerdown', () => {
+    fired = false;
+    if (!settings.locked) return;
+    timer = setTimeout(() => { fired = true; setLocked(false); }, 700);
+  });
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  b.addEventListener('pointerup', cancel); b.addEventListener('pointerleave', cancel); b.addEventListener('pointercancel', cancel);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+  b.addEventListener('click', () => {
+    if (fired) return;
+    if (settings.locked) lockHint(); else setLocked(true);
+  });
+  applyLock();
+}
+
 /* ---------- Gesten und Tasten im Lesemodus ---------- */
 let gesture = null;
 function onStageDown(e) {
@@ -2328,6 +2434,7 @@ document.addEventListener('keydown', (e) => {
   else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); goPrev(); }
   else if (k === 'Home') { e.preventDefault(); R.page = 1; renderSpread(); }
   else if (k === 'End') { e.preventDefault(); R.page = R.doc.numPages; renderSpread(); }
+  else if (k === 'Escape' && settings.locked) lockHint();
   else if (k === 'Escape') { if (R.annotate && R.sel) selectItem(null); else if (R.annotate) setAnnotate(false); else closeReader(); }
 });
 
@@ -2766,8 +2873,17 @@ const syncKey = (s) => `${normName(s.file || s.title)}|${s.size || 0}`;
     if (store === 'scores') { const g = scoreSig(v); if (v.sig !== undefined && v.sig !== g) v.mod = Date.now(); v.sig = g; }
     else if (store === 'setlists') { const g = setSig(v); if (v.sig !== undefined && v.sig !== g) v.mod = Date.now(); v.sig = g; if (!v.sid) v.sid = uid(); }
     else if (store === 'annos') v.mod = Date.now();
+    if (store !== 'files') notifyChange();
     return rawPut(store, v);
   };
+}
+// Änderungen an die iPad-App melden (gebündelt), damit sie den iCloud-Abgleich anstoßen kann
+const changeListeners = [];
+let changeTimer = null;
+function notifyChange() {
+  if (!changeListeners.length) return;
+  clearTimeout(changeTimer);
+  changeTimer = setTimeout(() => changeListeners.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } }), 3000);
 }
 // Ausgangsstand festhalten, damit Änderungen danach erkannt werden
 async function syncBaseline() {
@@ -2780,6 +2896,64 @@ function addTomb(k, id) {
   const list = tombs().filter((t) => !(t.k === k && t.id === id));
   list.push({ k, id, at: Date.now() });
   try { localStorage.setItem('nr-tomb', JSON.stringify(list.slice(-3000))); } catch { /* voll */ }
+}
+
+// Abgleich-Dateien bauen (auch für die iPad-App, die sie selbst in iCloud ablegt)
+async function buildSyncFiles({ allPdf = false, since, onProgress, mark = true, limitMb } = {}) {
+  const from = since ?? (settings.syncLastExport || settings.syncSince || Date.now());
+  const withPdf = allPdf ? scores : scores.filter((s) => !s.syncedIn && (s.added || 0) > from);
+  const keyById = new Map(scores.map((s) => [s.id, syncKey(s)]));
+  const outScores = scores.map((s) => {
+    const o = { k: keyById.get(s.id), mod: s.mod || 0, file: s.file || '', size: s.size || 0, pages: s.pages, added: s.added };
+    for (const f of SCORE_SYNC_FIELDS) o[f] = s[f] ?? null;
+    return o;
+  });
+  const outSets = setlists.map((sl) => ({ sid: sl.sid, name: sl.name, items: sl.items.map((id) => keyById.get(id)).filter(Boolean), mod: sl.mod || 0, created: sl.created }));
+  const outAnnos = [];
+  for (const a of await db.all('annos')) {
+    if (!a.strokes?.length) continue;
+    const [id, page] = a.key.split('|');
+    const k = keyById.get(id);
+    if (k) outAnnos.push({ k, p: +page, strokes: a.strokes, mod: a.mod || 0 });
+  }
+  const outTombs = tombs().map((t) => {
+    if (t.k !== 'anno') return t;
+    const [id, page] = t.id.split('|');
+    return keyById.has(id) ? { k: 'anno', id: `${keyById.get(id)}#${page}`, at: t.at } : null;
+  }).filter(Boolean);
+  const exported = Date.now();
+  const head = JSON.stringify({ app: 'Notenreader', type: 'sync', format: 1, device: settings.deviceName || '', exported, scores: outScores, setlists: outSets, annos: outAnnos, tombs: outTombs }).slice(0, -1);
+  const d = new Date(exported);
+  const pad = (n) => String(n).padStart(2, '0');
+  const base = `Notenreader-Abgleich ${(settings.deviceName || 'iPad').replace(/[\\/:*?"<>|]/g, '-')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
+  // Große Mengen in mehrere Dateien teilen: jede Datei ist für sich vollständig lesbar
+  const LIMIT = (limitMb || window.__syncLimitMb || 40) * 1048576;
+  const chunks = [[]];
+  let cur = 0;
+  for (const s of withPdf) {
+    const sz = s.size || 0;
+    if (cur && cur + sz > LIMIT) { chunks.push([]); cur = 0; }
+    chunks[chunks.length - 1].push(s); cur += sz;
+  }
+  const out = [];
+  let done = 0;
+  for (const [ci, list] of chunks.entries()) {
+    const parts = [head, `,"part":${ci + 1},"parts":${chunks.length},"files":[`];
+    let first = true;
+    for (const s of list) {
+      onProgress?.(done++, withPdf.length, s.title);
+      const f = await db.get('files', s.id);
+      if (!f) continue;
+      const b64 = await blobToBase64(new Blob([f.data], { type: 'application/pdf' }));
+      parts.push(`${first ? '' : ','}{"k":${JSON.stringify(keyById.get(s.id))},"thumb":${JSON.stringify(s.thumb || '')},"data":"${b64}"}`);
+      first = false;
+    }
+    parts.push(']}');
+    const name = chunks.length > 1 ? `${base} Teil ${String(ci + 1).padStart(2, '0')} von ${chunks.length}.json` : `${base}.json`;
+    out.push(new File(parts, name, { type: 'application/json' }));
+  }
+  if (mark) { settings.syncLastExport = exported; saveSettings(); }
+  return { files: out, exported };
 }
 
 async function exportSync() {
@@ -2800,61 +2974,10 @@ async function exportSync() {
   });
   if (ok !== 'ok') return;
   settings.deviceName = devName.value.trim(); saveSettings();
-  const withPdf = allPdf.checked ? scores : fresh;
   showProgress(0, 0); $('#progress-text').textContent = 'Abgleich wird erstellt …';
   try {
-    const keyById = new Map(scores.map((s) => [s.id, syncKey(s)]));
-    const outScores = scores.map((s) => {
-      const o = { k: keyById.get(s.id), mod: s.mod || 0, file: s.file || '', size: s.size || 0, pages: s.pages, added: s.added };
-      for (const f of SCORE_SYNC_FIELDS) o[f] = s[f] ?? null;
-      return o;
-    });
-    const outSets = setlists.map((sl) => ({ sid: sl.sid, name: sl.name, items: sl.items.map((id) => keyById.get(id)).filter(Boolean), mod: sl.mod || 0, created: sl.created }));
-    const outAnnos = [];
-    for (const a of await db.all('annos')) {
-      if (!a.strokes?.length) continue;
-      const [id, page] = a.key.split('|');
-      const k = keyById.get(id);
-      if (k) outAnnos.push({ k, p: +page, strokes: a.strokes, mod: a.mod || 0 });
-    }
-    const outTombs = tombs().map((t) => {
-      if (t.k !== 'anno') return t;
-      const [id, page] = t.id.split('|');
-      return keyById.has(id) ? { k: 'anno', id: `${keyById.get(id)}#${page}`, at: t.at } : null;
-    }).filter(Boolean);
-    const exported = Date.now();
-    const head = JSON.stringify({ app: 'Notenreader', type: 'sync', format: 1, device: settings.deviceName || '', exported, scores: outScores, setlists: outSets, annos: outAnnos, tombs: outTombs }).slice(0, -1);
-    const d = new Date(exported);
-    const pad = (n) => String(n).padStart(2, '0');
-    const base = `Notenreader-Abgleich ${(settings.deviceName || 'iPad').replace(/[\\/:*?"<>|]/g, '-')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
-    // Große Mengen in mehrere Dateien teilen: jede Datei ist für sich vollständig lesbar
-    const LIMIT = (window.__syncLimitMb || 40) * 1048576;
-    const chunks = [[]];
-    let cur = 0;
-    for (const s of withPdf) {
-      const sz = s.size || 0;
-      if (cur && cur + sz > LIMIT) { chunks.push([]); cur = 0; }
-      chunks[chunks.length - 1].push(s); cur += sz;
-    }
-    const out = [];
-    let done = 0;
-    for (const [ci, list] of chunks.entries()) {
-      const parts = [head, `,"part":${ci + 1},"parts":${chunks.length},"files":[`];
-      let first = true;
-      for (const s of list) {
-        showProgress(done++, withPdf.length, s.title);
-        const f = await db.get('files', s.id);
-        if (!f) continue;
-        const b64 = await blobToBase64(new Blob([f.data], { type: 'application/pdf' }));
-        parts.push(`${first ? '' : ','}{"k":${JSON.stringify(keyById.get(s.id))},"thumb":${JSON.stringify(s.thumb || '')},"data":"${b64}"}`);
-        first = false;
-      }
-      parts.push(']}');
-      const name = chunks.length > 1 ? `${base} Teil ${String(ci + 1).padStart(2, '0')} von ${chunks.length}.json` : `${base}.json`;
-      out.push(new File(parts, name, { type: 'application/json' }));
-    }
+    const { files: out } = await buildSyncFiles({ allPdf: allPdf.checked, onProgress: showProgress });
     hideProgress();
-    settings.syncLastExport = exported; saveSettings();
     await deliverFiles(out, 'Abgleich fertig', out.length > 1
       ? 'Im Teilen-Menü „In Dateien sichern“ wählen und einen Ordner in iCloud Drive nehmen. Auf dem anderen Gerät bei „Abgleich einlesen“ alle Teile auf einmal auswählen.'
       : 'Im Teilen-Menü „In Dateien sichern“ wählen und in iCloud Drive ablegen. Auf dem anderen Gerät unter Einstellungen → „Abgleich einlesen“.');
@@ -3077,7 +3200,9 @@ function renderInbox() {
       h('div', { class: 'note' }, 'PDF-Anhänge aus der Mail hierher ziehen, oder auf dem iPad/iPhone zuerst in „Dateien“ sichern und dann importieren.')),
     h('div', { class: 'inbox-picks' },
       scanCapture('Fotografieren', '', (f) => scanFlow(f)),
-      pickOption({ iconName: 'plus', title: 'PDFs wählen', sub: '', accept: 'application/pdf,.pdf', multiple: true, onFiles: (f) => importFiles(f) })));
+      pickOption({ iconName: 'plus', title: 'PDFs wählen', sub: '', accept: 'application/pdf,.pdf', multiple: true, onFiles: (f) => importFiles(f) }),
+      h('button', { class: 'btn pick', type: 'button', onclick: importMenu }, icon('more'),
+        h('span', {}, h('b', {}, 'Weitere Wege'), h('small', { class: 'sub' }, 'forScore, Ordner, Tabelle, Sicherung')))));
   if (!list.length) {
     root.replaceChildren(dropBox, h('div', { class: 'empty' }, h('div', { class: 'empty-art' }, '✓'), h('h2', {}, 'Alles verschlagwortet'),
       h('p', {}, 'Neue Noten ohne Instrument, Genre oder Tags erscheinen hier automatisch.')));
@@ -3177,7 +3302,6 @@ function bindUI() {
   $('#app-version').textContent = `Version ${APP_VERSION}`;
   for (const b of $$('.tabs button')) b.addEventListener('click', () => setTab(b.dataset.tab));
   const fileInput = $('#file-input');
-  $('#btn-import').addEventListener('click', importMenu);
   $('#btn-import-empty').addEventListener('click', importMenu);
   for (const inp of [fileInput, $('#folder-input'), $('#table-input'), $('#fs-input')]) {
     inp.addEventListener('change', () => { const f = [...(inp.files || [])]; inp.value = ''; if (f.length) importFiles(f); });
@@ -3240,6 +3364,7 @@ function bindUI() {
   $('#r-view').addEventListener('click', chooseView);
   $('#r-crop').addEventListener('click', () => { showChrome(true, false); cropEditor(R.score, R.page); });
   $('#r-annotate').addEventListener('click', () => setAnnotate(!R.annotate));
+  initLockButton();
   practice = initPractice({
     h, icon, settings, saveSettings, toast,
     getScore: () => (!$('#reader').hidden && R.score) || null,
@@ -3308,3 +3433,20 @@ main();
 
 // Für Tests im Browser
 window.__notenreader = { importFiles, R, settings, exportSync, importSync, db };
+// Schnittstelle für die iPad/iPhone-App (iCloud-Abgleich, Kurzbefehle)
+window.notenreaderApp = {
+  version: APP_VERSION,
+  listSetlists: () => setlists.map((sl) => ({ id: sl.id, sid: sl.sid, name: sl.name, count: sl.items.length })),
+  openSetlist: (id) => { const sl = setlists.find((x) => x.id === id || x.sid === id); if (!sl) return false; playSetlist(sl, 0); return true; },
+  // Liefert die Abgleich-Dateien als JSON-Texte. since: nur PDFs von Stücken, die danach dazukamen (ms). mark: Zeitpunkt merken.
+  async buildSync({ allPdf = false, since, mark = true, limitMb } = {}) {
+    const { files, exported } = await buildSyncFiles({ allPdf, since, mark, limitMb });
+    return { exported, device: settings.deviceName || '', parts: await Promise.all(files.map((f) => f.text())), names: files.map((f) => f.name) };
+  },
+  async importSync(data) {
+    const obj = typeof data === 'string' ? JSON.parse(data) : data;
+    if (obj?.app !== 'Notenreader' || obj.type !== 'sync') throw new Error('Keine Abgleich-Datei');
+    return importSync(obj, { quiet: true });
+  },
+  onChange(fn) { if (typeof fn === 'function') changeListeners.push(fn); },
+};

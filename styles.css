@@ -632,3 +632,22 @@ body.scanning { overflow: hidden; }
 .seg-opt input { position: absolute; opacity: 0; pointer-events: none; }
 .seg-opt span { display: block; text-align: center; padding: 8px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 .seg-opt input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
+
+/* Auftrittsmodus */
+#reader.locked #r-back, #reader.locked #r-music, #reader.locked #r-practice, #reader.locked #r-crop,
+#reader.locked #r-view, #reader.locked #r-annotate, #reader.locked #r-slider { display: none; }
+#r-lock.active { color: var(--accent); }
+#r-lock { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* Halbe Seite umblättern */
+#pages .page .half-ov { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none;
+  box-shadow: 0 3px 0 -1px var(--accent), 0 6px 12px rgba(0,0,0,.18); }
+
+/* Tempo-Trainer */
+.pr-train { border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 10px 12px; }
+.pr-train.on { border-color: var(--accent); }
+.pr-train-head { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+.pr-train-head small { color: rgba(255,255,255,.6); }
+.pr-train-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 14px; }
+.pr-train-row input { width: 52px; text-align: center; padding: 0 4px; min-height: 36px; border: 0; border-radius: 8px;
+  background: rgba(255,255,255,.1); color: #f2f2f2; font-size: 16px; }
