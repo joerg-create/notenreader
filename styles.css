@@ -636,7 +636,7 @@ body.scanning { overflow: hidden; }
 /* Auftrittsmodus */
 #reader.locked #r-back, #reader.locked #r-music, #reader.locked #r-practice, #reader.locked #r-crop,
 #reader.locked #r-view, #reader.locked #r-annotate, #reader.locked #r-slider { display: none; }
-#r-lock.active { color: var(--accent); }
+#r-lock.active, #r-night.active { color: var(--accent); }
 #r-lock { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
 /* Halbe Seite umblättern */

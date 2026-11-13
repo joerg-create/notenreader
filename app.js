@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.18.1';
+const APP_VERSION = '1.18.2';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -72,6 +72,7 @@ const ICONS = {
   check: '<path d="M20 6L9 17l-5-5"/>',
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
   jump: '<path d="M4 17V9a5 5 0 015-5h6"/><path d="M12 1l3 3-3 3"/><path d="M14 13h6v6"/><path d="M20 13l-8 8"/>',
+  moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
   unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.8-1.2"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -2691,7 +2692,11 @@ function nightOn() {
   const n = settings.night || 'off';
   return n === 'on' || (n === 'auto' && document.documentElement.hasAttribute('data-dark'));
 }
-function applyNight() { document.getElementById('reader')?.classList.toggle('night', nightOn()); }
+function applyNight() {
+  const on = nightOn();
+  document.getElementById('reader')?.classList.toggle('night', on);
+  document.getElementById('r-night')?.classList.toggle('active', on);
+}
 function applyTheme() {
   const d = document.documentElement;
   d.dataset.theme = settings.theme || 'classic';
@@ -3488,6 +3493,8 @@ function bindUI() {
   $('#r-crop').addEventListener('click', () => { showChrome(true, false); cropEditor(R.score, R.page); });
   $('#r-annotate').addEventListener('click', () => setAnnotate(!R.annotate));
   initLockButton();
+  $('#r-night').addEventListener('click', () => { settings.night = nightOn() ? 'off' : 'on'; saveSettings(); applyNight(); });
+  applyNight();
   practice = initPractice({
     h, icon, settings, saveSettings, toast,
     getScore: () => (!$('#reader').hidden && R.score) || null,
