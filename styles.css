@@ -173,17 +173,20 @@ dialog::backdrop { background: rgba(10, 12, 20, .45); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* Leseansicht */
-#reader { position: fixed; inset: 0; background: #2a2b2f; z-index: 50; color: #f2f2f2; }
+#reader { position: fixed; inset: 0; background: #fff; z-index: 50; color: #f2f2f2; }
 #stage {
   position: absolute; inset: 0;
-  padding: var(--sat) var(--sar) var(--sab) var(--sal);
+  padding: 0 var(--sar) 0 var(--sal);
   overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
 }
 #stage.scroll { overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 #stage.drawing { touch-action: none; }
 #pages { min-height: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
 #stage.scroll #pages { align-items: flex-start; }
-.page { position: relative; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.35); flex: none; }
+.page { position: relative; background: #fff; flex: none; }
+#pages { gap: 0; }
+.page + .page { box-shadow: -1px 0 0 #d0d0d0; }
+#stage.scroll #pages { background: #fff; }
 .page canvas { position: absolute; inset: 0; display: block; }
 .page canvas.anno { pointer-events: none; }
 

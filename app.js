@@ -5,7 +5,7 @@ import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } fro
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1094,7 +1094,23 @@ function isTwoUp() {
 }
 const stepSize = () => (isTwoUp() ? 2 : 1);
 
+// Vollbild beim Lesen: blendet auf dem iPad Statusleiste und Uhrzeit aus (iPhone kann das nicht)
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+function enterFullscreen() {
+  if (settings.fullscreen === false || fsElement()) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try { const pr = req.call(el); pr?.catch?.(() => {}); } catch { /* nicht erlaubt */ }
+}
+function exitFullscreen() {
+  const ex = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!fsElement() || !ex) return;
+  try { const pr = ex.call(document); pr?.catch?.(() => {}); } catch { /* egal */ }
+}
+
 async function openReader(queue, qi = 0, opts = {}) {
+  enterFullscreen();
   R.queue = queue; R.qi = qi; R.setlist = opts.setlist || null;
   $('#reader').hidden = false;
   document.body.classList.add('reading');
@@ -1148,6 +1164,7 @@ function doCloseReader() {
   if ($('#reader').hidden) return;
   setAnnotate(false);
   closeDoc();
+  exitFullscreen();
   $('#pages').replaceChildren();
   $('#reader').hidden = true;
   document.body.classList.remove('reading');
@@ -1240,7 +1257,7 @@ async function renderSpread({ scrollTo = 'top' } = {}) {
   const two = isTwoUp();
   const nums = two ? [R.page, R.page + 1].filter((x) => x <= n) : [R.page];
   const { w, h: hgt } = stageSize();
-  const slotW = two ? (w - 8) / 2 : w;
+  const slotW = two ? w / 2 : w;
   let views;
   try { views = await Promise.all(nums.map((x) => getPageView(x, slotW, hgt))); }
   catch (e) { console.error(e); if (token === R.renderToken) toast('Seite konnte nicht dargestellt werden'); return; }
@@ -1863,7 +1880,7 @@ function onStageUp(e) {
     const rx = (e.clientX - st.left) / st.width;
     if (rx < 0.3) goPrev();
     else if (rx > 0.7) goNext();
-    else showChrome(!chromeVisible());
+    else { enterFullscreen(); showChrome(!chromeVisible()); }
   }
 }
 
@@ -1972,6 +1989,9 @@ async function openSettings() {
     ].map(([v, t, d]) => h('label', {},
       h('input', { type: 'radio', name: 'sview', value: v, checked: settings.view === v, onchange: () => { settings.view = v; saveSettings(); } }),
       h('div', {}, h('b', {}, t), d ? h('small', {}, d) : null)))),
+    h('label', { class: 'check-row' },
+      h('input', { type: 'checkbox', checked: settings.fullscreen !== false, onchange: (e) => { settings.fullscreen = e.target.checked; saveSettings(); } }),
+      h('span', {}, h('b', {}, 'Vollbild beim Lesen'), h('br'), h('small', { class: 'note' }, 'Blendet auf dem iPad Uhrzeit und Statusleiste aus. Auf dem iPhone lässt Apple das nicht zu.'))),
     h('div', { class: 'section-title' }, 'Bildschirm anlassen'),
     h('div', { class: 'choice' }, [
       ['reading', 'Beim Lesen', 'Solange Noten offen sind, geht der Bildschirm nicht aus.'],
