@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.20.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -73,6 +73,7 @@ const ICONS = {
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
   jump: '<path d="M4 17V9a5 5 0 015-5h6"/><path d="M12 1l3 3-3 3"/><path d="M14 13h6v6"/><path d="M20 13l-8 8"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
+  parts: '<rect x="7" y="3" width="13" height="15" rx="1.5"/><path d="M4 7v12.5A1.5 1.5 0 005.5 21H15"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
   unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.8-1.2"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -844,6 +845,71 @@ function refConflict(ref, exceptId) {
   return scores.find((x) => x.id !== exceptId && (x.ref || '').toLowerCase() === ref.toLowerCase()) || null;
 }
 
+/* ---------- Stimmen verknüpfen: Stücke mit gleicher score.group gehören zusammen ---------- */
+const partsOf = (s) => (s?.group ? scores.filter((x) => x.group === s.group) : []);
+const partLabel = (x) => [x.title, (x.instruments || []).join(', ')].filter(Boolean).join(' · ');
+async function savePartGroup(s, memberIds) {
+  const members = memberIds.map(scoreById).filter((x) => x && x !== s);
+  const old = partsOf(s);
+  if (!members.length) {
+    if (s.group) {
+      s.group = ''; await db.put('scores', s);
+      const rest = old.filter((x) => x !== s);
+      if (rest.length === 1) { rest[0].group = ''; await db.put('scores', rest[0]); }
+    }
+    return;
+  }
+  const gid = s.group || members.find((m) => m.group)?.group || 'g' + uid();
+  // Bisherige Gruppen der neuen Mitglieder zusammenführen
+  const all = new Set([s, ...members]);
+  for (const m of members) for (const x of partsOf(m)) all.add(x);
+  for (const x of old) if (!all.has(x)) { x.group = ''; await db.put('scores', x); }
+  for (const x of all) if (x.group !== gid) { x.group = gid; await db.put('scores', x); }
+}
+function partsEditor(s) {
+  let ids = partsOf(s).filter((x) => x !== s).map((x) => x.id);
+  const box = h('div', { class: 'parts-ed' });
+  const opts = scores.filter((x) => x !== s).sort((a, b) => collator.compare(a.title, b.title));
+  const optLabel = (x) => `${x.title}${x.instruments?.length ? ' · ' + x.instruments.join(', ') : ''}${x.ref ? ' · ID ' + x.ref : ''}`;
+  const dlId = 'dl-parts-' + s.id;
+  const input = h('input', { list: dlId, autocomplete: 'off', placeholder: 'Titel eingeben und auswählen' });
+  const add = () => {
+    const v = input.value.trim();
+    const hit = opts.find((x) => optLabel(x) === v) || opts.find((x) => x.title.toLowerCase() === v.toLowerCase());
+    if (!hit) { toast('Stück nicht gefunden'); return; }
+    if (!ids.includes(hit.id)) ids.push(hit.id);
+    input.value = '';
+    draw();
+  };
+  input.addEventListener('change', () => { if (opts.some((x) => optLabel(x) === input.value.trim())) add(); });
+  const draw = () => box.replaceChildren(
+    ids.length ? h('div', { class: 'chips' }, ids.map(scoreById).filter(Boolean).map((x) => h('span', { class: 'chip on' }, partLabel(x),
+      h('button', { type: 'button', class: 'chip-x', 'aria-label': 'Entfernen', onclick: () => { ids = ids.filter((i) => i !== x.id); draw(); } }, '×'))))
+      : h('p', { class: 'dlg-note' }, 'Andere Stimmen oder Fassungen desselben Stücks (z. B. Tenorhorn und Bariton, Partitur und Einzelstimme). In der Leseansicht wechselst du dann mit einem Tipp, auf derselben Seite.'),
+    h('div', { class: 'parts-add' }, input, h('button', { type: 'button', class: 'btn small', onclick: add }, 'Verknüpfen')),
+    h('datalist', { id: dlId }, opts.map((x) => h('option', { value: optLabel(x) }))));
+  draw();
+  return { el: box, ids: () => ids };
+}
+async function chooseParts() {
+  const list = partsOf(R.score);
+  if (list.length < 2) return;
+  showChrome(true, false);
+  const r = await dialog({
+    title: 'Stimme wechseln',
+    body: h('div', { class: 'menu' }, list.map((x) => h('button', {
+      type: 'button', class: `btn pick${x === R.score ? ' current' : ''}`, onclick: () => $('#dlg').closeWith(x.id),
+    }, icon(x === R.score ? 'check' : 'parts'), h('span', {}, h('b', {}, x.title), h('small', { class: 'sub' }, (x.instruments || []).join(', ') || (x === R.score ? 'gerade offen' : '')))))),
+    actions: [{ label: 'Abbrechen', value: null }],
+  });
+  showChrome(true);
+  if (!r || r === R.score.id) return;
+  const page = R.page;
+  R.queue[R.qi] = r;
+  await loadScore(r, page);
+  toast(`Stimme: ${partLabel(R.score)}`);
+}
+
 async function editScore(s) {
   const title = h('input', { value: s.title, autocomplete: 'off' });
   const ref = h('input', { value: s.ref || '', autocomplete: 'off', placeholder: nextRef() });
@@ -853,6 +919,7 @@ async function editScore(s) {
   const tags = h('input', { value: (s.tags || []).join(', '), autocomplete: 'off', placeholder: 'z. B. Weihnachten, Vorspiel' });
   const keywords = h('input', { value: s.keywords || '', autocomplete: 'off', placeholder: 'weitere Begriffe für die Suche' });
   const composers = [...new Set(scores.map((x) => x.composer).filter(Boolean))].sort(collator.compare);
+  const parts = partsEditor(s);
   const r = await dialog({
     title: 'Stück bearbeiten',
     body: [
@@ -862,6 +929,7 @@ async function editScore(s) {
       field('Instrument(e), mit Komma getrennt', instruments), suggestChips(instruments, allValues('instruments')),
       field('Tags, mit Komma getrennt', tags), suggestChips(tags, allValues('tags')),
       field('Suchbegriffe', keywords),
+      h('div', { class: 'field' }, h('span', {}, 'Verknüpfte Stimmen'), parts.el),
       datalist('dl-genre', allValues('genre')), datalist('dl-composer', composers),
     ],
     actions: [{ label: 'Abbrechen', value: null }, { label: 'Sichern', value: 'save', primary: true }],
@@ -879,6 +947,8 @@ async function editScore(s) {
   s.keywords = keywords.value.trim();
   s.inbox = false;
   await db.put('scores', s);
+  await savePartGroup(s, parts.ids());
+  if (!$('#reader').hidden && R.score) updateReaderInfo();
   if (state.tab === 'inbox') renderInbox();
   renderLibrary();
   if (state.tab === 'setlists') renderSetlists();
@@ -1466,6 +1536,7 @@ function updateReaderInfo() {
   if (!s) return;
   $('#r-title').textContent = s.title;
   $('#r-sub').textContent = [s.composer, metaLine(s), s.ref ? `ID ${s.ref}` : ''].filter(Boolean).join(' · ');
+  $('#r-parts').hidden = partsOf(s).length < 2;
   const n = R.doc?.numPages || s.pages;
   const two = isTwoUp() && R.page < n;
   $('#r-page').textContent = two ? `${R.page}–${R.page + 1} / ${n}` : `${R.page} / ${n}`;
@@ -2993,7 +3064,7 @@ async function scanFlow(initialFiles) {
 /* ---------- Abgleich zwischen Geräten (Datei über iCloud Drive) ----------
    Jedes Stück wird geräteübergreifend über Dateiname + Größe erkannt (die IDs sind je Gerät verschieden).
    Geändert wird nach dem Prinzip „neuere Änderung gewinnt“ (Feld mod). Gelöschtes wird als Grabstein gemerkt. */
-const SCORE_SYNC_FIELDS = ['title', 'composer', 'ref', 'instruments', 'genre', 'tags', 'keywords', 'rating', 'difficulty', 'inbox'];
+const SCORE_SYNC_FIELDS = ['title', 'composer', 'ref', 'instruments', 'genre', 'tags', 'keywords', 'rating', 'difficulty', 'inbox', 'group'];
 const scoreSig = (s) => JSON.stringify(SCORE_SYNC_FIELDS.map((f) => s[f] ?? null));
 const setSig = (sl) => JSON.stringify([sl.name, sl.items]);
 const syncKey = (s) => `${normName(s.file || s.title)}|${s.size || 0}`;
@@ -3496,6 +3567,7 @@ function bindUI() {
   $('#r-crop').addEventListener('click', () => { showChrome(true, false); cropEditor(R.score, R.page); });
   $('#r-annotate').addEventListener('click', () => setAnnotate(!R.annotate));
   initLockButton();
+  $('#r-parts').addEventListener('click', chooseParts);
   $('#r-night').addEventListener('click', () => { settings.night = nightOn() ? 'off' : 'on'; saveSettings(); applyNight(); });
   applyNight();
   practice = initPractice({
@@ -3566,7 +3638,7 @@ async function main() {
 main();
 
 // Für Tests im Browser
-window.__notenreader = { importFiles, R, settings, exportSync, importSync, db };
+window.__notenreader = { importFiles, R, settings, exportSync, importSync, db, editScore, scoreById: (id) => scoreById(id) };
 // Schnittstelle für die iPad/iPhone-App (iCloud-Abgleich, Kurzbefehle)
 window.notenreaderApp = {
   version: APP_VERSION,

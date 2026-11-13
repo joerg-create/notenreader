@@ -690,3 +690,13 @@ body.scanning { overflow: hidden; }
 .ub-hist b { color: #f2f2f2; font-weight: 600; }
 .ub-note { font-style: italic; }
 .ub-line { font-size: 14px; color: rgba(255,255,255,.75); }
+
+/* Stimmen verknüpfen */
+.parts-ed { display: flex; flex-direction: column; gap: 8px; }
+.parts-ed .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.parts-add { display: flex; gap: 8px; }
+.parts-add input { flex: 1; min-width: 0; }
+.chip-x { border: 0; background: transparent; color: inherit; font-size: 16px; line-height: 1; padding: 0 0 0 6px; cursor: pointer; }
+#r-parts[hidden] { display: none; }
+#reader.locked #r-parts { display: none; }
+.btn.pick.current { border-color: var(--accent); }

@@ -2,7 +2,7 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.19)
+## Was sie kann (Version 1.20)
 - **Designs:** Einstellungen → Design: Klassisch, Blau, Salbei, Bordeaux oder Kontrast, jeweils hell, dunkel oder automatisch. **Musik** hat jetzt einen eigenen Knopf (Notensymbol) neben dem Metronom, auf der Hauptseite und in der Leseansicht.
 - **Apple Music im Notenreader:** Im Reiter „Mitspielen“ einmal pro Gerät „Mit Apple Music anmelden“. Dann „Lied zuordnen“: Playlist wählen, Lied antippen (oder im Katalog suchen). „Alle Stücke automatisch zuordnen“ verbindet alle Stücke, deren Titel zu einem Lied der Playlist passt. Abspielen, Vor-/Zurückspringen und Wiederholschleife A–B direkt im Notenreader (Apple-Music-Abo nötig; langsamer abspielen geht bei Apple-Music-Liedern nicht). Der Zugangscode in musickit-token.js läuft nach sechs Monaten ab und muss dann mit dem Schlüssel AuthKey_A7JT5LJCYW.p8 neu erzeugt werden.
 - **Mitspielen:** Im Metronom-Fenster der Reiter „Mitspielen“. Pro Stück einen Apple-Music-Link speichern (in der Musik-App beim Lied „Teilen → Link kopieren“), der Knopf öffnet das Lied dann in Apple Music. Oder eine eigene Audiodatei (MP3, M4A, WAV) hinterlegen: Die spielt der Notenreader selbst, mit Tempo 50–125 % ohne Tonhöhenänderung und Wiederholschleife A–B. Läuft beim Blättern weiter, unten rechts eine kleine Anzeige zum Stoppen.
@@ -35,6 +35,7 @@ Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 - **Nachtansicht:** Mond-Knopf oben in der Leseansicht, oder unter Ansicht (Buch-Symbol): helle Noten auf dunklem Grund. „Wie das Gerät“ schaltet sie mit dem Dunkelmodus vom iPad ein.
 - **Selbst aufnehmen:** Im Metronom-Fenster der Reiter „Üben“. „Aufnahme starten“ nimmt über das Mikrofon auf, die Aufnahmen bleiben beim Stück und lassen sich anhören, teilen (z. B. in Dateien sichern) und löschen.
 - **Übe-Tagebuch:** Ebenfalls unter „Üben“. Die Übezeit zählt von selbst mit, solange ein Stück offen ist (nicht im Auftrittsmodus). Zu sehen sind heute, die letzten 7 Tage als Balken, die Zeit pro Stück, das schnellste Metronom-Tempo und eine Notiz pro Tag.
+- **Stimmen verknüpfen:** Beim Bearbeiten eines Stücks unter „Verknüpfte Stimmen“ andere Stimmen oder Fassungen desselben Stücks hinzufügen. In der Leseansicht erscheint dann oben ein Knopf zum Wechseln, die Seite bleibt dabei gleich. Die Verknüpfung wird mit abgeglichen.
 - **Auftrittsmodus:** Schloss oben in der Leseansicht. Danach geht nur noch Umblättern, alle anderen Knöpfe sind weg. Zum Entsperren das Schloss gedrückt halten.
 - **Halbe Seite umblättern:** Unter Ansicht einschalten. Beim Umblättern erscheint oben zuerst der Anfang der nächsten Seite, das Ende der aktuellen bleibt unten stehen. Beim zweiten Blättern kommt die ganze Seite.
 - **Tempo-Trainer:** Im Metronom einschalten: alle paar Takte ein paar Schläge schneller, bis zum Zieltempo. Nach dem Stopp beginnt er wieder beim Starttempo.
