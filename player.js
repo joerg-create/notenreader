@@ -61,6 +61,7 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
     pill.hidden = !(playing && !onChange?.panelOpen?.());
     pill.replaceChildren(h('span', {}, `♪ ${fmt(own ? el.currentTime : amState().time)}`), h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); el.pause(); amPause(); update(); } }, '■'));
     if (!ui) return;
+    if (ui.mini) { ui.playB.textContent = el.paused ? '▶' : '❚❚'; ui.playB.setAttribute('aria-label', el.paused ? 'Abspielen' : 'Pause'); return; }
     ui.time.textContent = `${fmt(el.currentTime)} / ${fmt(el.duration)}`;
     if (!ui.seeking) { ui.seek.max = isFinite(el.duration) ? el.duration : 0; ui.seek.value = el.currentTime; }
     ui.playB.textContent = el.paused ? '▶ Abspielen' : '❚❚ Pause';
@@ -130,6 +131,7 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
     const st = amState();
     const mine = amUi.track && (st.id === amUi.track.id || st.id === amUi.track.lib);
     const t = mine ? st.time : 0, d = mine ? st.dur : amUi.track?.dur || 0;
+    if (amUi.mini) { const pl = mine && st.playing; amUi.playB.textContent = pl ? '❚❚' : '▶'; amUi.playB.setAttribute('aria-label', pl ? 'Pause' : 'Abspielen'); return; }
     amUi.time.textContent = `${fmt(t)} / ${fmt(d)}`;
     if (!amUi.seeking) { amUi.seek.max = d || 0; amUi.seek.value = t; }
     const playing = mine && st.playing;
@@ -337,10 +339,46 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
     return body;
   }
 
+  // Kleine Bedienung über den Noten (wie ein Fernbedienungs-Knopf): zurück, Abspielen/Pause, vor
+  const hasSong = () => { const m = getScore()?.music || {}; return !!(m.audio || (m.am && amAvailable() && amAuthorized())); };
+  function renderMini() {
+    const s = getScore();
+    if (!s || !hasSong()) return null;
+    const m = s.music || {};
+    load(s);
+    const useAm = !!(m.am && amAvailable() && amAuthorized()) && !(m.audio && el.src && !el.paused);
+    const playB = h('button', { class: 'mini-b mini-play', type: 'button' }, '▶');
+    let back, fwd;
+    if (useAm) {
+      ui = null;
+      amUi = { mini: true, track: m.am, playB };
+      playB.onclick = async () => {
+        const st = amState();
+        const mine = st.id === m.am.id || st.id === m.am.lib;
+        try { if (mine && st.playing) amPause(); else { el.pause(); await amPlay(m.am); } } catch (e) { console.error(e); toast(`Abspielen nicht möglich: ${errText(e)}`, 6000); }
+        amUpdate(); update();
+      };
+      back = () => amSeek(amState().time - 5); fwd = () => amSeek(amState().time + 5);
+      queueMicrotask(amUpdate);
+    } else {
+      amUi = null;
+      ui = { mini: true, playB };
+      playB.onclick = toggle;
+      back = () => { el.currentTime = Math.max(0, el.currentTime - 5); };
+      fwd = () => { el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); };
+      queueMicrotask(update);
+    }
+    return [
+      h('button', { class: 'mini-b', type: 'button', 'aria-label': '5 Sekunden zurück', title: '5 Sekunden zurück', onclick: back }, '◀◀'),
+      playB,
+      h('button', { class: 'mini-b', type: 'button', 'aria-label': '5 Sekunden vor', title: '5 Sekunden vor', onclick: fwd }, '▶▶'),
+    ];
+  }
+
   function scoreChanged() {
     const s = getScore();
     if (s && loadedFor !== s.id) { amLoopA = amLoopB = null; amView = 'main'; load(s).then(update); }
   }
 
-  return { render, scoreChanged, update, isPlaying: () => !!el.src && !el.paused, stop: () => el.pause() };
+  return { render, renderMini, hasSong, scoreChanged, update, isPlaying: () => !!el.src && !el.paused, stop: () => el.pause() };
 }

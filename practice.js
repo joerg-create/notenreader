@@ -244,7 +244,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   const panel = h('div', { id: 'practice', hidden: true, role: 'dialog', 'aria-label': 'Metronom und Stimmgerät' });
   const pill = h('button', { id: 'metro-pill', hidden: true, onclick: () => open('metro') });
   document.body.append(panel, pill);
-  let tab = 'metro', dots = [];
+  let tab = 'metro', dots = [], playMini = true;
   const hooks = { panelOpen: () => !panel.hidden, openPanel: () => open('play'), rerender: () => render() };
   const player = makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange: hooks });
   const ueben = makeUeben({ h, icon, toast, settings, getScore, getScores, saveScore, db, share, rerender: () => { if (tab === 'ueben') render(); } });
@@ -256,13 +256,27 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     pill.hidden = !(running && panel.hidden);
     pill.replaceChildren(h('span', { class: 'pill-dot' }), `${st.bpm}`, h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); stop(); } }, '■'));
     if (panel.hidden) return;
+    // Mitspielen mit zugeordnetem Lied: nur kleine Knöpfe über den Noten
+    if (tab === 'play' && playMini) {
+      const mini = player.renderMini();
+      if (mini) {
+        panel.classList.add('mini');
+        panel.replaceChildren(...mini,
+          h('button', { class: 'mini-b mini-more', type: 'button', 'aria-label': 'Mehr: Lied, Tempo, Schleife', title: 'Mehr', onclick: () => { playMini = false; render(); } }, '•••'),
+          h('button', { class: 'mini-b mini-x', type: 'button', 'aria-label': 'Ausblenden', title: 'Ausblenden (Musik läuft weiter)', onclick: close }, '×'));
+        return;
+      }
+    }
+    panel.classList.remove('mini');
     const head = h('div', { class: 'pr-head' },
       tab === 'play' || tab === 'ueben'
         ? h('div', { class: 'pr-title' }, tab === 'play' ? 'Mitspielen' : 'Üben')
         : h('div', { class: 'pr-tabs' },
           h('button', { class: tab === 'metro' ? 'active' : '', onclick: () => { tab = 'metro'; render(); } }, 'Metronom'),
           h('button', { class: tab === 'tuner' ? 'active' : '', onclick: () => { tab = 'tuner'; render(); } }, 'Stimmgerät')),
-      h('button', { class: 'btn icon small', 'aria-label': 'Schließen', onclick: close }, icon('x')));
+      h('div', { class: 'pr-head-b' },
+        tab === 'play' && player.hasSong() ? h('button', { class: 'btn icon small', 'aria-label': 'Verkleinern', title: 'Verkleinern', onclick: () => { playMini = true; render(); } }, icon('down')) : null,
+        h('button', { class: 'btn icon small', 'aria-label': 'Schließen', onclick: close }, icon('x'))));
     let body;
     if (tab === 'ueben') {
       body = ueben.render();
@@ -344,6 +358,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     panel.replaceChildren(head, body);
   }
   function open(which) {
+    if (which === 'play' && (tab !== 'play' || panel.hidden)) playMini = true;
     const s = getScore();
     if (s?.metro && !running) Object.assign(st, s.metro);
     if (which) tab = which;

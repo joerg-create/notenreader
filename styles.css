@@ -716,3 +716,17 @@ body.scanning { overflow: hidden; }
 .set-foot { margin-top: 16px; }
 
 .pr-title { font-weight: 700; font-size: 17px; padding: 6px 4px; }
+
+/* Mitspielen klein: halb durchsichtige Knöpfe über den Noten */
+#practice.mini { width: auto; padding: 6px; display: flex; gap: 6px; align-items: center; overflow: visible;
+  background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  right: calc(16px + var(--sar)); bottom: calc(64px + var(--sab)); }
+#practice .mini-b { width: 46px; height: 46px; border-radius: 12px; border: 0; cursor: pointer;
+  background: rgba(120, 120, 128, .32); color: rgba(30, 30, 34, .78); font-size: 17px; font-weight: 700; letter-spacing: -2px;
+  display: inline-flex; align-items: center; justify-content: center; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+#practice .mini-play { width: 54px; height: 54px; font-size: 22px; letter-spacing: 0; }
+#practice .mini-more, #practice .mini-x { width: 36px; height: 36px; font-size: 14px; letter-spacing: 0; opacity: .8; }
+#practice .mini-x { font-size: 20px; }
+#practice .mini-b:active { background: rgba(120, 120, 128, .55); }
+#reader.night ~ #practice .mini-b { color: rgba(240, 240, 245, .85); }
+.pr-head-b { display: flex; gap: 6px; }
