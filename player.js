@@ -7,6 +7,7 @@ const fmt = (t) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 const audioKey = (id) => `audio|${id}`;
+const errText = (e) => String(e?.message || e || 'unbekannter Fehler').slice(0, 200);
 import { amAvailable, amAuthorize, amInstance, amAuthorized, amPlaylists, amPlaylistTracks, amSearch, amPlay, amPause, amSeek, amState, amOn, normTitle, amNative, amRate, amSetRate } from './applemusic.js';
 
 export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange }) {
@@ -187,7 +188,7 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
       playB: h('button', { class: 'btn primary pr-go', onclick: async () => {
         const st = amState();
         const mine = st.id === m.am.id || st.id === m.am.lib;
-        try { if (mine && st.playing) amPause(); else { el.pause(); await amPlay(m.am); } } catch (e) { console.error(e); toast('Abspielen nicht möglich (Apple-Music-Abo aktiv?)'); }
+        try { if (mine && st.playing) amPause(); else { el.pause(); await amPlay(m.am); } } catch (e) { console.error(e); toast(`Abspielen nicht möglich: ${errText(e)}`, 6000); }
         amUpdate(); update();
       } }),
       aB: h('button', { class: 'btn', onclick: () => { amLoopA = amState().time; if (amLoopB != null && amLoopB <= amLoopA) amLoopB = null; amUpdate(); } }),
@@ -235,15 +236,15 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
       if (!amListId) { listBox.replaceChildren(); return; }
       listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Lade Playlist …'));
       try { amTracks = await amPlaylistTracks(amListId); showTracks(amTracks); }
-      catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Playlist konnte nicht geladen werden')); }
+      catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, `Playlist konnte nicht geladen werden: ${errText(e)}`)); }
     }
     (async () => {
       try {
         amLists = amLists || await amPlaylists();
         sel.replaceChildren(h('option', { value: '' }, 'Playlist wählen …'), ...amLists.map((p) => h('option', { value: p.id }, p.name)));
         if (amListId && amLists.some((p) => p.id === amListId)) { sel.value = amListId; await loadTracks(); }
-        else listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Wähle oben deine Playlist.'));
-      } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Mediathek konnte nicht geladen werden')); }
+        else listBox.replaceChildren(h('p', { class: 'pr-note' }, amLists.length ? 'Wähle oben deine Playlist.' : 'In deiner Mediathek wurden keine Playlists gefunden. Mit „Katalog“ suchst du in ganz Apple Music.'));
+      } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, `Mediathek konnte nicht geladen werden: ${errText(e)}`)); }
     })();
     return [
       h('div', { class: 'pr-row' }, sel),
@@ -251,7 +252,7 @@ export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db,
         h('button', { class: 'btn', onclick: async () => {
           const term = search.value.trim() || s.title;
           listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Suche im Katalog …'));
-          try { showTracks(await amSearch(term)); } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Suche fehlgeschlagen')); }
+          try { showTracks(await amSearch(term)); } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, `Suche fehlgeschlagen: ${errText(e)}`)); }
         } }, 'Katalog')),
       listBox,
       h('div', { class: 'pr-row' },
