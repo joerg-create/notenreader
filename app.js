@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.23.2';
+const APP_VERSION = '1.23.3';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -3165,9 +3165,10 @@ function addTomb(k, id) {
 }
 
 // Abgleich-Dateien bauen (auch für die iPad-App, die sie selbst in iCloud ablegt)
-async function buildSyncFiles({ allPdf = false, since, onProgress, mark = true, limitMb } = {}) {
+async function buildSyncFiles({ allPdf = false, since, onProgress, mark = true, limitMb, pdfIds } = {}) {
   const from = since ?? (settings.syncLastExport || settings.syncSince || Date.now());
-  const withPdf = allPdf ? scores : scores.filter((s) => !s.syncedIn && (s.added || 0) > from);
+  const pick = Array.isArray(pdfIds) ? new Set(pdfIds) : null;
+  const withPdf = pick ? scores.filter((s) => pick.has(s.id)) : allPdf ? scores : scores.filter((s) => !s.syncedIn && (s.added || 0) > from);
   const keyById = new Map(scores.map((s) => [s.id, syncKey(s)]));
   const outScores = scores.map((s) => {
     const o = { k: keyById.get(s.id), mod: s.mod || 0, file: s.file || '', size: s.size || 0, pages: s.pages, added: s.added };
@@ -3295,6 +3296,13 @@ async function importSync(data, { quiet = false } = {}) {
         s.genre = s.genre || '';
         s.mod = r.mod; s.sig = scoreSig(s);
         await db.rawPut('scores', s);
+        stats.changed++;
+      }
+      // PDF kommt in einem späteren Teil nach: fehlende Datei ergänzen
+      const f = files.get(r.k);
+      if (f && !(await db.get('files', s.id))) {
+        await db.put('files', { id: s.id, data: Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0)).buffer });
+        if (f.thumb && !s.thumb) { s.thumb = f.thumb; await db.rawPut('scores', s); }
         stats.changed++;
       }
     }
@@ -3710,11 +3718,14 @@ window.__notenreader = { importFiles, R, settings, exportSync, importSync, db, e
 // Schnittstelle für die iPad/iPhone-App (iCloud-Abgleich, Kurzbefehle)
 window.notenreaderApp = {
   version: APP_VERSION,
+  features: ['pdfIds', 'listScores'],
+  listScores: () => scores.map((s) => ({ id: s.id, size: s.size || 0 })),
   listSetlists: () => setlists.map((sl) => ({ id: sl.id, sid: sl.sid, name: sl.name, count: sl.items.length })),
   openSetlist: (id) => { const sl = setlists.find((x) => x.id === id || x.sid === id); if (!sl) return false; playSetlist(sl, 0); return true; },
   // Liefert die Abgleich-Dateien als JSON-Texte. since: nur PDFs von Stücken, die danach dazukamen (ms). mark: Zeitpunkt merken.
-  async buildSync({ allPdf = false, since, mark = true, limitMb } = {}) {
-    const { files, exported } = await buildSyncFiles({ allPdf, since, mark, limitMb });
+  // pdfIds: genau die PDFs dieser Stücke (für den häppchenweisen ersten Abgleich), Metadaten immer vollständig.
+  async buildSync({ allPdf = false, since, mark = true, limitMb, pdfIds } = {}) {
+    const { files, exported } = await buildSyncFiles({ allPdf, since, mark, limitMb, pdfIds });
     return { exported, device: settings.deviceName || '', parts: await Promise.all(files.map((f) => f.text())), names: files.map((f) => f.name) };
   },
   async importSync(data) {
