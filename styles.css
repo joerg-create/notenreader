@@ -580,3 +580,21 @@ body.scanning { overflow: hidden; }
 #crop-ed .seg { border: 0; background: transparent; color: #cfd0d6; padding: 8px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; }
 #crop-ed .seg.active { background: var(--accent); color: #1a1406; }
 .inbox-preview > .btn.small { margin-top: 8px; }
+
+/* Mitspielen (1.14) */
+.pr-tabs button { padding: 7px 10px; }
+.pr-sect { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #9a9ca6; margin-top: 4px; }
+#practice .pl-input { flex: 1; min-width: 0; min-height: 40px; border-radius: 10px; border: 0; padding: 0 10px; font-size: 15px; background: rgba(255,255,255,.1); color: #f2f2f2; }
+.pl-file { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pl-seek { position: relative; }
+.pl-band { position: absolute; top: 50%; height: 10px; margin-top: -5px; background: rgba(232,163,61,.35); border-radius: 4px; pointer-events: none; }
+#practice .btn.active { background: rgba(232,163,61,.3); color: #ffcf8a; }
+#practice label.btn { cursor: pointer; }
+#play-pill {
+  position: fixed; z-index: 70; right: calc(12px + var(--sar)); bottom: calc(118px + var(--sab));
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-radius: 99px; border: 0; cursor: pointer;
+  background: rgba(24,26,32,.9); color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+#play-pill .pill-stop { margin-left: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.15); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+#practice .pl-input + .btn { flex: none; }

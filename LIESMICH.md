@@ -2,7 +2,8 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.13)
+## Was sie kann (Version 1.14)
+- **Mitspielen:** Im Metronom-Fenster der Reiter „Mitspielen“. Pro Stück einen Apple-Music-Link speichern (in der Musik-App beim Lied „Teilen → Link kopieren“), der Knopf öffnet das Lied dann in Apple Music. Oder eine eigene Audiodatei (MP3, M4A, WAV) hinterlegen: Die spielt der Notenreader selbst, mit Tempo 50–125 % ohne Tonhöhenänderung und Wiederholschleife A–B. Läuft beim Blättern weiter, unten rechts eine kleine Anzeige zum Stoppen.
 - **Zuschneiden von Hand:** Zuschneide-Symbol (zwei Winkel) oben in der Leseansicht oder „Zuschneiden“ unter der Vorschau im Eingang. Den Rahmen an den Griffen ziehen, verschieben oder neu aufziehen; gilt für alle Seiten oder nur für eine Seite. „Ganze Seite“ passt das Blatt ohne Zuschnitt ein, „Automatisch“ nimmt wieder die Erkennung.
 - **Weiße Ränder abschneiden:** Die Leseansicht erkennt auf jeder Seite den Notenbereich und vergrößert ihn auf die ganze Anzeige (Standard: an). Über das Buch-Symbol „Ansicht“ lässt es sich pro Stück oder für alle Stücke ausschalten. Anmerkungen bleiben an ihrer Stelle.
 - **Alle Setlists löschen** im Reiter Setlists; **Weiß** als Stiftfarbe.

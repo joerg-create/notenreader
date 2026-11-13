@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -936,6 +936,7 @@ async function deleteScore(s) {
   addTomb('score', syncKey(s));
   await db.del('scores', s.id);
   await db.del('files', s.id);
+  await db.del('files', 'audio|' + s.id);
   await db.delPrefix('annos', s.id + '|');
   scores = scores.filter((x) => x.id !== s.id);
   for (const sl of setlists) {
@@ -2829,7 +2830,7 @@ async function importSync(data) {
       if (t.k === 'score') {
         const s = byKey.get(t.id);
         if (s && (s.mod || 0) <= t.at && (s.added || 0) <= t.at) {
-          await db.del('scores', s.id); await db.del('files', s.id); await db.delPrefix('annos', s.id + '|');
+          await db.del('scores', s.id); await db.del('files', s.id); await db.del('files', 'audio|' + s.id); await db.delPrefix('annos', s.id + '|');
           scores = scores.filter((x) => x !== s); byKey.delete(t.id);
           for (const sl of setlists) if (sl.items.includes(s.id)) { sl.items = sl.items.filter((x) => x !== s.id); await db.put('setlists', sl); }
           stats.removed++;
@@ -3139,6 +3140,7 @@ function bindUI() {
     h, icon, settings, saveSettings, toast,
     getScore: () => (!$('#reader').hidden && R.score) || null,
     saveScore: (sc) => db.put('scores', sc),
+    db,
   });
   $('#r-practice').addEventListener('click', () => practice.toggle());
   $('#btn-practice').addEventListener('click', () => practice.toggle());
