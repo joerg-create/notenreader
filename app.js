@@ -5,7 +5,7 @@ import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } fro
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.10.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -48,6 +48,11 @@ const ICONS = {
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/>',
+  ruler: '<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6 8v3M9.5 8v4M13 8v3M16.5 8v4"/>',
+  line: '<path d="M4 20L20 4"/>',
+  staff: '<path d="M3 5h18M3 9.5h18M3 14h18M3 18.5h18" stroke-width="1.6"/>',
+  brush: '<path d="M14 4l6 6-8.5 8.5a3 3 0 01-4.2 0l-1.8-1.8a3 3 0 010-4.2z"/><path d="M4 20l2.5-2.5"/>',
+  lasso: '<path d="M7 18c-3-1.5-4-4-4-6.5C3 7 7 4 12 4s9 3 9 7-4 7-9 7c-1.2 0-2.3-.1-3.3-.4" stroke-dasharray="3 2.5"/><path d="M8.7 17.6L7 21"/>',
   rotate: '<path d="M20 12a8 8 0 11-2.3-5.7"/><path d="M20 4v5h-5"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   book: '<path d="M2 4h7a3 3 0 013 3v13a2 2 0 00-2-2H2z"/><path d="M22 4h-7a3 3 0 00-3 3v13a2 2 0 012-2h8z"/>',
@@ -1405,7 +1410,44 @@ document.addEventListener('visibilitychange', updateKeepAwake);
 document.addEventListener('pointerup', () => { if (shouldStayAwake() && (!R.wakeLock || (awakeVideo && awakeVideo.paused))) updateKeepAwake(); }, true);
 
 /* ---------- Anmerkungen ---------- */
-const SIZES = { pen: [0.0016, 0.0028, 0.0048], hl: [0.012, 0.02, 0.03] };
+const SIZES = { pen: [0.0016, 0.0028, 0.0048], hl: [0.012, 0.02, 0.03], white: [0.008, 0.016, 0.03], staff: [0.0009, 0.0013, 0.0019] };
+// Lineal und Retusche
+const RETOUCH_TOOLS = ['line', 'staff', 'white', 'rect', 'lasso'];
+const ITEM_FOR_TOOL = { stamp: ['stamp', 'hairpin'], text: ['text'], rect: ['rect'], line: ['line'], staff: ['staff'], lasso: ['poly'] };
+const inkColor = () => (R.color === '#ffd400' ? '#1a1a1a' : R.color);
+// Fast waagerechte oder senkrechte Linien einrasten lassen
+function snapLine(it, view) {
+  const dx = (it.x2 - it.x1) * view.cssW, dy = (it.y2 - it.y1) * view.cssH;
+  const ang = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+  if (ang < 6) it.y2 = it.y1; else if (ang > 84) it.x2 = it.x1;
+}
+function drawRetouch(ctx, s, W, H) {
+  ctx.save();
+  if (s.t === 'line') {
+    ctx.strokeStyle = s.c; ctx.lineWidth = Math.max(1, s.w * W); ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(s.x1 * W, s.y1 * H); ctx.lineTo(s.x2 * W, s.y2 * H); ctx.stroke();
+    const pad = s.w / 2;
+    boxCache.set(s, [Math.min(s.x1, s.x2), Math.min(s.y1, s.y2) - pad * W / H, Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1) + pad * 2 * W / H]);
+  } else if (s.t === 'staff') {
+    ctx.strokeStyle = s.c; ctx.lineWidth = Math.max(1, s.w * W); ctx.lineCap = 'butt';
+    const x1 = Math.min(s.x1, s.x2) * W, x2 = Math.max(s.x1, s.x2) * W;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) { const y = Math.round((s.y + s.h * i / 4) * H) + 0.5; ctx.moveTo(x1, y); ctx.lineTo(x2, y); }
+    ctx.stroke();
+    boxCache.set(s, [Math.min(s.x1, s.x2), s.y, Math.abs(s.x2 - s.x1), s.h]);
+  } else if (s.t === 'poly') {
+    const pt = s.p;
+    ctx.fillStyle = s.c || '#ffffff';
+    ctx.beginPath(); ctx.moveTo(pt[0] * W, pt[1] * H);
+    for (let i = 2; i < pt.length; i += 2) ctx.lineTo(pt[i] * W, pt[i + 1] * H);
+    ctx.closePath(); ctx.fill();
+    if (R.annotate) { ctx.strokeStyle = 'rgba(120,120,120,.6)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.stroke(); }
+    let a = 1, b = 1, c = 0, d = 0;
+    for (let i = 0; i < pt.length; i += 2) { a = Math.min(a, pt[i]); b = Math.min(b, pt[i + 1]); c = Math.max(c, pt[i]); d = Math.max(d, pt[i + 1]); }
+    boxCache.set(s, [a, b, c - a, d - b]);
+  }
+  ctx.restore();
+}
 const annoKey = (n) => `${R.score.id}|${n}`;
 
 async function getAnnos(n) {
@@ -1485,6 +1527,7 @@ function drawStroke(ctx, s, W, H) {
     return;
   }
   if (s.t === 'hairpin') return drawHairpin(ctx, s, W, H);
+  if (s.t === 'line' || s.t === 'staff' || s.t === 'poly') return drawRetouch(ctx, s, W, H);
   const p = s.p;
   if (!p || p.length < 2) return;
   ctx.save();
@@ -1581,7 +1624,7 @@ function setAnnotate(on) {
   if (!on) selectItem(null);
   for (const w of $$('#pages .page')) if (w.view) paintAnnos(w.view);
   if (on) { showChrome(true, false); updateToolUI(); }
-  else { $('#stamp-bar').hidden = true; if (!$('#reader').hidden) showChrome(true); }
+  else { $('#stamp-bar').hidden = true; $('#retouch-bar').hidden = true; if (!$('#reader').hidden) showChrome(true); }
 }
 function updateToolUI() {
   for (const b of $$('#anno-bar .tool[data-tool]')) {
@@ -1590,6 +1633,10 @@ function updateToolUI() {
   }
   for (const b of $$('#anno-bar .tool[data-size]')) b.classList.toggle('active', +b.dataset.size === settings.penSize);
   $('#stamp-bar').hidden = !(R.annotate && R.tool === 'stamp');
+  const retouch = RETOUCH_TOOLS.includes(R.tool);
+  $('#retouch-bar').hidden = !(R.annotate && retouch);
+  $('#a-retouch').classList.toggle('active', retouch);
+  for (const b of $$('#retouch-bar .tool')) b.classList.toggle('active', b.dataset.rt === R.tool);
   for (const b of $$('#stamp-bar .stamp')) b.classList.toggle('active', b.dataset.g === R.stamp);
 }
 function buildStampBar() {
@@ -1613,7 +1660,7 @@ function hitItem(view, x, y) {
   const tol = 0.006;
   for (let i = list.length - 1; i >= 0; i--) {
     const it = list[i];
-    if (!['stamp', 'text', 'rect', 'hairpin'].includes(it.t)) continue;
+    if (!['stamp', 'text', 'rect', 'hairpin', 'line', 'staff', 'poly'].includes(it.t)) continue;
     const b = boxCache.get(it);
     if (b && x >= b[0] - tol && x <= b[0] + b[2] + tol && y >= b[1] - tol && y <= b[1] + b[3] + tol) return it;
   }
@@ -1680,14 +1727,14 @@ async function onDrawDown(e) {
     const inBox = ([bx, by, bs]) => px >= bx - 6 && px <= bx + bs + 6 && py >= by - 6 && py <= by + bs + 6;
     if (inBox(g.del)) { deleteSelected(); return; }
     if (inBox(g.resize)) {
-      drawing = { view, mode: 'resize', item: R.sel.item, start: [x, y], orig: structuredClone(R.sel.item), before: snapshot(view.n), id: e.pointerId };
+      drawing = { view, mode: 'resize', item: R.sel.item, start: [x, y], orig: structuredClone(R.sel.item), origBox: boxCache.get(R.sel.item)?.slice(), before: snapshot(view.n), id: e.pointerId };
       return;
     }
   }
   // Vorhandenes Zeichen antippen = auswählen und verschieben (bei Zeichen-Werkzeugen)
-  if (['stamp', 'text', 'rect', 'select', 'hairpin'].includes(R.tool)) {
+  if (R.tool === 'select' || ITEM_FOR_TOOL[R.tool]) {
     const hit = hitItem(view, x, y);
-    if (hit) {
+    if (hit && (R.tool === 'select' || ITEM_FOR_TOOL[R.tool].includes(hit.t))) {
       selectItem({ n: view.n, item: hit });
       drawing = { view, mode: 'move', item: hit, start: [x, y], orig: structuredClone(hit), before: snapshot(view.n), id: e.pointerId };
       return;
@@ -1703,6 +1750,26 @@ async function onDrawDown(e) {
   if (R.tool === 'rect') {
     const item = { t: 'rect', x, y, w: 0, h: 0, c: '#ffffff' };
     drawing = { view, mode: 'create-rect', item, start: [x, y], before, id: e.pointerId };
+    return;
+  }
+  if (R.tool === 'line') {
+    const item = { t: 'line', x1: x, y1: y, x2: x, y2: y, w: SIZES.pen[settings.penSize - 1], c: inkColor() };
+    drawing = { view, mode: 'create-line', item, before, id: e.pointerId };
+    return;
+  }
+  if (R.tool === 'staff') {
+    const item = { t: 'staff', x1: x, x2: x, y, h: settings.staffH || 0.024, w: SIZES.staff[settings.penSize - 1], c: inkColor() };
+    drawing = { view, mode: 'create-staff', item, start: [x, y], before, id: e.pointerId };
+    return;
+  }
+  if (R.tool === 'lasso') {
+    const item = { t: 'poly', p: [x, y], c: '#ffffff' };
+    drawing = { view, mode: 'create-poly', item, before, id: e.pointerId };
+    return;
+  }
+  if (R.tool === 'white') {
+    const stroke = { t: 'pen', c: '#ffffff', w: SIZES.white[settings.penSize - 1], p: [x, y] };
+    drawing = { view, stroke, before, id: e.pointerId };
     return;
   }
   if (R.tool === 'stamp' && R.stamp?.startsWith('hairpin')) {
@@ -1735,8 +1802,8 @@ function addItem(view, item, before) {
   R.annos.set(view.n, list);
   R.undo.push({ n: view.n, strokes: before });
   saveAnnos(view.n);
-  R.sel = { n: view.n, item };
-  $('#a-delete').hidden = false;
+  // Linien, Notensysteme und Lasso nicht automatisch auswählen: man zeichnet meist mehrere hintereinander
+  if (!['line', 'staff', 'poly'].includes(item.t)) { R.sel = { n: view.n, item }; $('#a-delete').hidden = false; }
   paintAnnos(view);
 }
 async function askText() {
@@ -1758,7 +1825,9 @@ function onDrawMove(e) {
     const dx = x - d.start[0], dy = y - d.start[1];
     const it = d.item, o = d.orig;
     if (it.t === 'rect') { it.x = o.x + dx; it.y = o.y + dy; }
-    else if (it.t === 'hairpin') { it.x1 = o.x1 + dx; it.x2 = o.x2 + dx; it.y1 = o.y1 + dy; it.y2 = o.y2 + dy; }
+    else if (it.t === 'hairpin' || it.t === 'line') { it.x1 = o.x1 + dx; it.x2 = o.x2 + dx; it.y1 = o.y1 + dy; it.y2 = o.y2 + dy; }
+    else if (it.t === 'staff') { it.x1 = o.x1 + dx; it.x2 = o.x2 + dx; it.y = o.y + dy; }
+    else if (it.t === 'poly') { it.p = o.p.map((v, i) => v + (i % 2 ? dy : dx)); }
     else { it.x = o.x + dx; it.y = o.y + dy; }
     d.changed = true;
     paintAnnos(view);
@@ -1768,7 +1837,22 @@ function onDrawMove(e) {
     const it = d.item, o = d.orig;
     if (it.t === 'rect') { it.w = Math.max(0.005, o.w + x - d.start[0]); it.h = Math.max(0.005, o.h + y - d.start[1]); }
     else if (it.t === 'hairpin') { it.x2 = o.x2 + x - d.start[0]; it.y2 = o.y2 + y - d.start[1]; }
-    else {
+    else if (it.t === 'line') {
+      // Griff liegt unten rechts; das Ende, das weiter rechts liegt, wird bewegt
+      const k = o.x2 >= o.x1 ? 2 : 1;
+      it['x' + k] = o['x' + k] + x - d.start[0]; it['y' + k] = o['y' + k] + y - d.start[1];
+      if (k === 2) snapLine(it, view); else { const t = { x1: it.x2, y1: it.y2, x2: it.x1, y2: it.y1 }; snapLine(t, view); it.x1 = t.x2; it.y1 = t.y2; }
+    } else if (it.t === 'staff') {
+      const right = o.x2 >= o.x1 ? 'x2' : 'x1';
+      it[right] = o[right] + x - d.start[0];
+      it.h = Math.max(0.006, o.h + y - d.start[1]);
+    } else if (it.t === 'poly') {
+      const b = d.origBox;
+      if (b && b[2] > 0.001 && b[3] > 0.001) {
+        const sx = Math.max(0.1, (b[2] + x - d.start[0]) / b[2]), sy = Math.max(0.1, (b[3] + y - d.start[1]) / b[3]);
+        it.p = o.p.map((v, i) => (i % 2 ? b[1] + (v - b[1]) * sy : b[0] + (v - b[0]) * sx));
+      }
+    } else {
       const ar = view.cssH / view.cssW;
       const d0 = Math.hypot(d.start[0] - o.x, (d.start[1] - o.y) * ar);
       const d1 = Math.hypot(x - o.x, (y - o.y) * ar);
@@ -1786,6 +1870,26 @@ function onDrawMove(e) {
   }
   if (d.mode === 'create-hairpin') {
     d.item.x2 = x; d.item.y2 = d.item.y1 + (y - d.item.y1) * 0.15; // fast waagerecht
+    paintAnnos(view, d.item);
+    return;
+  }
+  if (d.mode === 'create-line') {
+    d.item.x2 = x; d.item.y2 = y; snapLine(d.item, view);
+    paintAnnos(view, d.item);
+    return;
+  }
+  if (d.mode === 'create-staff') {
+    d.item.x2 = x;
+    const dy = y - d.start[1];
+    if (Math.abs(dy) > 0.008) { d.item.h = Math.abs(dy); d.item.y = Math.min(y, d.start[1]); d.sized = true; }
+    else if (d.sized) { d.item.h = settings.staffH || 0.024; d.item.y = d.start[1]; d.sized = false; }
+    paintAnnos(view, d.item);
+    return;
+  }
+  if (d.mode === 'create-poly') {
+    const pt = d.item.p;
+    const lx = pt[pt.length - 2], ly = pt[pt.length - 1];
+    if (Math.abs(x - lx) + Math.abs(y - ly) > 0.003) pt.push(x, y);
     paintAnnos(view, d.item);
     return;
   }
@@ -1817,6 +1921,25 @@ function onDrawUp(e) {
   }
   if (d.mode === 'create-hairpin') {
     if (Math.abs(d.item.x2 - d.item.x1) < 0.02) { paintAnnos(d.view); toast('Gabel waagerecht ziehen'); return; }
+    addItem(d.view, d.item, d.before);
+    return;
+  }
+  if (d.mode === 'create-line') {
+    if (Math.hypot(d.item.x2 - d.item.x1, d.item.y2 - d.item.y1) < 0.008) { paintAnnos(d.view); toast('Linie mit dem Stift aufziehen'); return; }
+    addItem(d.view, d.item, d.before);
+    return;
+  }
+  if (d.mode === 'create-staff') {
+    const it = d.item;
+    if (Math.abs(it.x2 - it.x1) < 0.02) { paintAnnos(d.view); toast('Notensystem waagerecht aufziehen. Schräg nach unten ziehen bestimmt die Höhe.'); return; }
+    if (it.x2 < it.x1) [it.x1, it.x2] = [it.x2, it.x1];
+    if (d.sized) { settings.staffH = it.h; saveSettings(); }
+    addItem(d.view, it, d.before);
+    return;
+  }
+  if (d.mode === 'create-poly') {
+    const b = d.item.p;
+    if (b.length < 8) { paintAnnos(d.view); toast('Mit dem Lasso eine Fläche umfahren'); return; }
     addItem(d.view, d.item, d.before);
     return;
   }
@@ -2706,6 +2829,11 @@ function bindUI() {
   $('#a-undo').addEventListener('click', undoAnno);
   $('#a-clear').addEventListener('click', clearPageAnnos);
   $('#a-delete').addEventListener('click', deleteSelected);
+  $('#a-retouch').addEventListener('click', () => {
+    if (!RETOUCH_TOOLS.includes(R.tool)) R.tool = settings.retouchTool || 'line';
+    selectItem(null); updateToolUI();
+  });
+  for (const b of $$('#retouch-bar .tool')) b.addEventListener('click', () => { R.tool = b.dataset.rt; settings.retouchTool = R.tool; saveSettings(); selectItem(null); updateToolUI(); });
   buildStampBar();
   document.fonts?.load(`40px ${STAMP_FONT}`).then(() => { for (const w of $$('#pages .page')) if (w.view) paintAnnos(w.view); }).catch(() => {});
   for (const b of $$('#anno-bar .tool[data-tool]')) {

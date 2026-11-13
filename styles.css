@@ -475,3 +475,10 @@ body.scanning { overflow: hidden; }
 
 .check-row { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; font-size: 14px; }
 .check-row input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+
+/* Lineal und Retusche (1.10) */
+#retouch-bar { flex-basis: 100%; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; border-top: 1px solid rgba(255,255,255,.12); }
+#retouch-bar[hidden] { display: none; }
+#retouch-bar::-webkit-scrollbar { display: none; }
+#retouch-bar .stamp-label { flex: none; font-size: 11px; color: #9a9ca6; text-transform: uppercase; letter-spacing: .04em; margin: 0 2px 0 4px; }
+.tool.wide { width: auto; padding: 0 10px; gap: 6px; font-size: 14px; white-space: nowrap; }

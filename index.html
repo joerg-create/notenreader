@@ -102,7 +102,7 @@
         <span class="sep"></span>
         <button class="tool" data-tool="stamp" aria-label="Musikzeichen" title="Musikzeichen"><span class="tool-glyph">&#xE1D5;</span></button>
         <button class="tool" data-tool="text" aria-label="Text" title="Text"><span class="tool-t">T</span></button>
-        <button class="tool" data-tool="rect" aria-label="Abdecken" title="Abdecken (weißes Rechteck)"><span class="ic" data-icon="cover"></span></button>
+        <button class="tool" id="a-retouch" aria-label="Lineal und Retusche" title="Lineal und Retusche"><span class="ic" data-icon="ruler"></span></button>
         <button class="tool" data-tool="select" aria-label="Auswählen und verschieben" title="Auswählen und verschieben"><span class="ic" data-icon="pointer"></span></button>
         <button class="tool danger" id="a-delete" aria-label="Auswahl löschen" title="Auswahl löschen" hidden><span class="ic" data-icon="x"></span></button>
         <span class="sep"></span>
@@ -115,6 +115,16 @@
       </div>
       <button class="btn small primary" id="a-done">Fertig</button>
       <div id="stamp-bar" hidden></div>
+      <div id="retouch-bar" hidden>
+        <span class="stamp-label">Lineal</span>
+        <button class="tool wide" data-rt="line" title="Gerade Linie (rastet waagerecht/senkrecht ein)"><span class="ic" data-icon="line"></span><span>Linie</span></button>
+        <button class="tool wide" data-rt="staff" title="5 Notenlinien aufziehen"><span class="ic" data-icon="staff"></span><span>Notensystem</span></button>
+        <span class="sep"></span>
+        <span class="stamp-label">Retusche</span>
+        <button class="tool wide" data-rt="white" title="Weißer Pinsel zum Wegmalen"><span class="ic" data-icon="brush"></span><span>Weißer Pinsel</span></button>
+        <button class="tool wide" data-rt="rect" title="Weißes Rechteck"><span class="ic" data-icon="cover"></span><span>Abdecken</span></button>
+        <button class="tool wide" data-rt="lasso" title="Fläche umfahren und weiß abdecken"><span class="ic" data-icon="lasso"></span><span>Lasso</span></button>
+      </div>
     </div>
 
     <div id="reader-bottom" class="rbar">

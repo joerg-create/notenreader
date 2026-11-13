@@ -2,7 +2,8 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.9)
+## Was sie kann (Version 1.10)
+- **Lineal und Retusche:** Im Anmerke-Modus das Lineal-Symbol. „Linie“ zieht gerade Linien (rasten waagerecht/senkrecht ein), „Notensystem“ zieht 5 Notenlinien auf einmal auf (schräg nach unten ziehen bestimmt den Linienabstand, wird gemerkt). Retusche: „Weißer Pinsel“ malt frei weiß über, „Abdecken“ legt ein weißes Rechteck, „Lasso“ deckt eine umfahrene Fläche weiß ab. Alles lässt sich mit demselben Werkzeug antippen, verschieben, am orangen Griff anpassen und löschen; Strichstärke über die drei Stärke-Knöpfe.
 - **Abgleich zwischen Geräten:** Einstellungen → „Abgleich exportieren“ schreibt Tags, Anmerkungen, Setlists, Löschungen und die seit dem letzten Abgleich neuen PDFs in eine Datei „Notenreader-Abgleich …json“ (auf dem iPad über das Teilen-Menü „In Dateien sichern“ → iCloud Drive). Auf dem anderen Gerät „Abgleich einlesen“. Stücke werden über Dateiname und Größe erkannt, die jeweils neuere Änderung gewinnt. Die Daten jedes Geräts liegen sonst getrennt im Browser-Speicher.
 - **Noten abfotografieren:** Im Eingang „Fotografieren“ oder unter Importieren „Noten fotografieren“ / „Fotos von Noten“. Die vier Eckpunkte auf die Blattecken ziehen (mit Lupe), „Übernehmen“ zieht die Seite gerade. Die Scan-Optik entfernt Schatten und macht das Papier weiß. Beliebig viele Seiten nacheinander aufnehmen, Reihenfolge ändern, dann „Als Stück sichern“: daraus wird ein PDF, das im Eingang zum Taggen landet.
 - **Bildschirm anlassen:** Unter Einstellungen „Beim Lesen“ (Standard), „Immer“ oder „Aus“. Nutzt die Wake-Lock-Funktion des Browsers, auf iPad/iPhone zusätzlich ein stummes Mini-Video (vendor/wach.mp4), weil ältere iOS-Versionen die Funktion in Home-Bildschirm-Apps ignorieren.
