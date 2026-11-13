@@ -1,6 +1,7 @@
 // Metronom und Stimmgerät (Web Audio). Die Oberfläche baut sich selbst auf; app.js reicht Hilfsfunktionen herein.
 
 import { makePlayer } from './player.js';
+import { makeUeben } from './ueben.js';
 
 let ctx = null;
 function audio() {
@@ -50,7 +51,7 @@ const TRANSPOSE = { C: 0, B: 2, Es: 9, F: 7 };
 const TEMPO_NAMES = [[40, 'Grave'], [60, 'Largo'], [66, 'Larghetto'], [76, 'Adagio'], [108, 'Andante'], [120, 'Moderato'], [156, 'Allegro'], [176, 'Vivace'], [200, 'Presto'], [999, 'Prestissimo']];
 const tempoName = (bpm) => TEMPO_NAMES.find(([max]) => bpm < max)[1];
 
-export function initPractice({ h, icon, settings, saveSettings, toast, getScore, getScores, saveScore, db }) {
+export function initPractice({ h, icon, settings, saveSettings, toast, getScore, getScores, saveScore, db, share }) {
   const st = {
     bpm: settings.metroBpm || 100, beats: settings.metroBeats || 4, sub: settings.metroSub || 1,
     vol: settings.metroVol ?? 0.8, a4: settings.tunerA4 || 443, trans: settings.tunerTrans || 'C',
@@ -111,6 +112,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     render();
   }
   function stop() {
+    if (running) ueben?.logBpm(st.bpm);
     running = false; clearInterval(timer); timer = null; queue.length = 0;
     if (st.train.on && startBpm) st.bpm = startBpm; // Trainer beginnt beim nächsten Mal wieder beim Starttempo
     render();
@@ -245,6 +247,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   let tab = 'metro', dots = [];
   const hooks = { panelOpen: () => !panel.hidden, openPanel: () => open('play'), rerender: () => render() };
   const player = makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange: hooks });
+  const ueben = makeUeben({ h, icon, toast, settings, getScore, getScores, saveScore, db, share, rerender: () => { if (tab === 'ueben') render(); } });
   let refNote = 'B', refOct = 3;
 
   function render() {
@@ -257,10 +260,13 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
       h('div', { class: 'pr-tabs' },
         h('button', { class: tab === 'metro' ? 'active' : '', onclick: () => { tab = 'metro'; render(); } }, 'Metronom'),
         h('button', { class: tab === 'tuner' ? 'active' : '', onclick: () => { tab = 'tuner'; render(); } }, 'Stimmgerät'),
-        h('button', { class: tab === 'play' ? 'active' : '', onclick: () => { tab = 'play'; render(); } }, 'Mitspielen')),
+        h('button', { class: tab === 'play' ? 'active' : '', onclick: () => { tab = 'play'; render(); } }, 'Mitspielen'),
+        h('button', { class: tab === 'ueben' ? 'active' : '', onclick: () => { tab = 'ueben'; render(); } }, 'Üben')),
       h('button', { class: 'btn icon small', 'aria-label': 'Schließen', onclick: close }, icon('x')));
     let body;
-    if (tab === 'play') {
+    if (tab === 'ueben') {
+      body = ueben.render();
+    } else if (tab === 'play') {
       body = player.render();
     } else if (tab === 'metro') {
       dots = Array.from({ length: st.beats }, (_, i) => h('span', { class: `beat${i === 0 && st.beats > 1 ? ' first' : ''}` }));
@@ -368,6 +374,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   return {
     open, close, toggle, scoreChanged, isOpen: () => !panel.hidden,
     // Metronom-Knopf: Metronom/Stimmgerät; Musik-Knopf: Mitspielen
+    flush: () => ueben.flush(),
     toggleTools: () => { if (tab !== 'play') lastTool = tab; toggle(tab === 'play' || panel.hidden ? lastTool : undefined); },
     toggleMusic: () => { if (tab !== 'play') lastTool = tab; toggle('play'); },
   };

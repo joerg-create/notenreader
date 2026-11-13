@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.18.2';
+const APP_VERSION = '1.19.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -942,6 +942,7 @@ async function deleteScore(s) {
   await db.del('scores', s.id);
   await db.del('files', s.id);
   await db.del('files', 'audio|' + s.id);
+  await db.delPrefix('files', 'rec|' + s.id + '|');
   await db.delPrefix('annos', s.id + '|');
   scores = scores.filter((x) => x.id !== s.id);
   for (const sl of setlists) {
@@ -1441,6 +1442,7 @@ async function loadScore(id, page) {
 function hideJumpBack() { R.jumpBack = null; const b = $('#jump-back'); if (b) b.hidden = true; }
 function closeReader() {
   hideJumpBack();
+  practice?.flush?.();
   if (history.state?.reader) history.back();
   else doCloseReader();
 }
@@ -1453,6 +1455,7 @@ function doCloseReader() {
   $('#reader').hidden = true;
   document.body.classList.remove('reading');
   releaseWakeLock();
+  practice?.scoreChanged();
   renderLibrary();
   if (state.tab === 'setlists') renderSetlists();
 }
@@ -3330,7 +3333,7 @@ function renderInbox() {
       scanCapture('Fotografieren', '', (f) => scanFlow(f)),
       pickOption({ iconName: 'plus', title: 'PDFs wählen', sub: '', accept: 'application/pdf,.pdf', multiple: true, onFiles: (f) => importFiles(f) }),
       h('button', { class: 'btn pick', type: 'button', onclick: importMenu }, icon('more'),
-        h('span', {}, h('b', {}, 'Weitere Wege'), h('small', { class: 'sub' }, 'forScore, Ordner, Tabelle, Sicherung')))));
+        h('span', {}, h('b', {}, 'Weitere Wege'), h('small', { class: 'sub' }, '')))));
   if (!list.length) {
     root.replaceChildren(dropBox, h('div', { class: 'empty' }, h('div', { class: 'empty-art' }, '✓'), h('h2', {}, 'Alles verschlagwortet'),
       h('p', {}, 'Neue Noten ohne Instrument, Genre oder Tags erscheinen hier automatisch.')));
@@ -3501,6 +3504,7 @@ function bindUI() {
     getScores: () => scores,
     saveScore: (sc) => db.put('scores', sc),
     db,
+    share: (files) => deliverFiles(files, 'Aufnahme', 'Im Teilen-Menü z. B. „In Dateien sichern“ wählen oder sie per Nachricht verschicken.'),
   });
   $('#r-practice').addEventListener('click', () => practice.toggleTools());
   $('#btn-practice').addEventListener('click', () => practice.toggleTools());
