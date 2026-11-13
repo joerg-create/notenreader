@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.18.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -71,6 +71,7 @@ const ICONS = {
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+  jump: '<path d="M4 17V9a5 5 0 015-5h6"/><path d="M12 1l3 3-3 3"/><path d="M14 13h6v6"/><path d="M20 13l-8 8"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
   unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.8-1.2"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -1436,7 +1437,9 @@ async function loadScore(id, page) {
   await renderSpread();
 }
 
+function hideJumpBack() { R.jumpBack = null; const b = $('#jump-back'); if (b) b.hidden = true; }
 function closeReader() {
+  hideJumpBack();
   if (history.state?.reader) history.back();
   else doCloseReader();
 }
@@ -1788,7 +1791,7 @@ document.addEventListener('pointerup', () => { if (shouldStayAwake() && (!R.wake
 const SIZES = { pen: [0.0016, 0.0028, 0.0048], hl: [0.012, 0.02, 0.03], white: [0.008, 0.016, 0.03], staff: [0.0009, 0.0013, 0.0019] };
 // Lineal und Retusche
 const RETOUCH_TOOLS = ['line', 'staff', 'white', 'rect', 'lasso'];
-const ITEM_FOR_TOOL = { stamp: ['stamp', 'hairpin'], text: ['text'], rect: ['rect'], line: ['line'], staff: ['staff'], lasso: ['poly'] };
+const ITEM_FOR_TOOL = { link: ['link'], stamp: ['stamp', 'hairpin'], text: ['text'], rect: ['rect'], line: ['line'], staff: ['staff'], lasso: ['poly'] };
 const inkColor = () => (R.color === '#ffd400' ? '#1a1a1a' : R.color);
 // Fast waagerechte oder senkrechte Linien einrasten lassen
 function snapLine(it, view) {
@@ -1892,6 +1895,7 @@ function ensureAnnoCanvas(view) {
 }
 function drawStroke(ctx, s, W, H) {
   if (s.t === 'stamp' || s.t === 'text') return drawGlyph(ctx, s, W, H);
+  if (s.t === 'link') return drawLink(ctx, s, W, H);
   if (s.t === 'rect') {
     ctx.save(); ctx.fillStyle = s.c || '#ffffff';
     ctx.fillRect(s.x * W, s.y * H, s.w * W, s.h * H);
@@ -1938,6 +1942,98 @@ function drawGlyph(ctx, s, W, H) {
   ctx.restore();
   boxCache.set(s, [(s.x * W - bw / 2) / W, (s.y * H - bh / 2) / H, bw / W, bh / H]);
 }
+// Sprungmarke: blaues Schild, Antippen beim Lesen springt zur Zielseite
+const linkText = (s) => `${s.label ? s.label + ' ' : ''}→ ${s.tp}`;
+function drawLink(ctx, s, W, H) {
+  const px = s.s * W;
+  ctx.save();
+  ctx.font = `600 ${px}px -apple-system, system-ui, sans-serif`;
+  const tw = ctx.measureText(linkText(s)).width;
+  const bw = tw + px * 1.1, bh = px * 1.6;
+  const x0 = s.x * W - bw / 2, y0 = s.y * H - bh / 2;
+  ctx.fillStyle = 'rgba(31, 98, 208, .9)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x0, y0, bw, bh, bh / 2); else ctx.rect(x0, y0, bw, bh);
+  ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(linkText(s), s.x * W, s.y * H + px * 0.05);
+  ctx.restore();
+  boxCache.set(s, [x0 / W, y0 / H, bw / W, bh / H]);
+}
+async function askLink(item) {
+  const n = R.doc?.numPages || 1;
+  const page = h('input', { type: 'number', inputmode: 'numeric', min: 1, max: n, value: item.tp || 1 });
+  const label = h('input', { value: item.label || '', placeholder: 'z. B. Coda, D.S., Trio, 2. Wdh.', autocomplete: 'off', maxlength: 14 });
+  const posOpts = [[0, 'Oben'], [0.33, 'Mitte'], [0.66, 'Unten']];
+  const cur = posOpts.reduce((a, o) => (Math.abs(o[0] - (item.ty || 0)) < Math.abs(a[0] - (item.ty || 0)) ? o : a))[0];
+  const pos = h('div', { class: 'seg-row' }, posOpts.map(([v, l]) => h('label', { class: 'seg-opt' }, h('input', { type: 'radio', name: 'ty', value: v, checked: v === cur }), h('span', {}, l))));
+  const r = await dialog({
+    title: 'Sprungmarke',
+    body: [
+      h('p', { class: 'dlg-note' }, 'Beim Lesen auf das blaue Schild tippen: die App springt zur Zielseite, z. B. für D.C., D.S., Coda oder Wiederholungen. Danach bringt „Zurück“ dich wieder hierher.'),
+      field(`Ziel: Seite (1 bis ${n})`, page),
+      h('div', { class: 'field' }, h('span', {}, 'Stelle auf der Zielseite (bei „Breite füllen“)'), pos),
+      field('Beschriftung (freiwillig)', label),
+    ],
+    actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', value: 'ok', primary: true }],
+    onOpen: () => page.select(),
+  });
+  if (r !== 'ok') return false;
+  item.tp = Math.max(1, Math.min(n, Math.round(+page.value || 1)));
+  item.ty = +($('input[name=ty]:checked', pos)?.value || 0);
+  item.label = label.value.trim();
+  return true;
+}
+// Beim Lesen: Sprungmarke unter dem Finger?
+function linkAt(clientX, clientY) {
+  for (const w of $$('#pages .page')) {
+    const v = w.view;
+    if (!v) continue;
+    const r = v.anno.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) continue;
+    const pr = w.getBoundingClientRect();
+    if (clientX < pr.left || clientX > pr.right || clientY < pr.top || clientY > pr.bottom) continue;
+    const x = (clientX - r.left) / r.width, y = (clientY - r.top) / r.height;
+    const tol = 0.012;
+    for (const it of R.annos.get(v.n) || []) {
+      if (it.t !== 'link') continue;
+      const b = boxCache.get(it);
+      if (b && x >= b[0] - tol && x <= b[0] + b[2] + tol && y >= b[1] - tol && y <= b[1] + b[3] + tol) return { n: v.n, item: it };
+    }
+  }
+  return null;
+}
+async function jumpTo(link) {
+  R.jumpBack = { qi: R.qi, page: R.page, scroll: $('#stage').scrollTop };
+  let p = Math.max(1, Math.min(R.doc.numPages, link.item.tp));
+  if (isTwoUp() && p % 2 === 0) p -= 1;
+  R.page = p;
+  await renderSpread();
+  if (viewMode() === 'width') { const st = $('#stage'); st.scrollTop = Math.max(0, (link.item.ty || 0) * st.scrollHeight - 8); }
+  showJumpBack();
+}
+function showJumpBack() {
+  let b = $('#jump-back');
+  if (!b) {
+    b = h('button', { id: 'jump-back', class: 'btn small', type: 'button' });
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const j = R.jumpBack; R.jumpBack = null; b.hidden = true;
+      if (!j || j.qi !== R.qi) return;
+      R.page = j.page;
+      await renderSpread();
+      $('#stage').scrollTop = j.scroll || 0;
+    });
+    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    b.addEventListener('pointerup', (e) => e.stopPropagation());
+    $('#reader').append(b);
+  }
+  b.replaceChildren(icon('back'), h('span', {}, `Zurück zu Seite ${R.jumpBack.page}`));
+  b.hidden = false;
+  clearTimeout(showJumpBack.t);
+  showJumpBack.t = setTimeout(() => { b.hidden = true; }, 15000);
+}
+
 function drawHairpin(ctx, s, W, H) {
   const x1 = s.x1 * W, x2 = s.x2 * W, y1 = s.y1 * H, y2 = s.y2 * H;
   const open = s.o * W; // Öffnung am weiten Ende
@@ -2036,7 +2132,7 @@ function hitItem(view, x, y) {
   const tol = 0.006;
   for (let i = list.length - 1; i >= 0; i--) {
     const it = list[i];
-    if (!['stamp', 'text', 'rect', 'hairpin', 'line', 'staff', 'poly'].includes(it.t)) continue;
+    if (!['stamp', 'text', 'rect', 'hairpin', 'line', 'staff', 'poly', 'link'].includes(it.t)) continue;
     const b = boxCache.get(it);
     if (b && x >= b[0] - tol && x <= b[0] + b[2] + tol && y >= b[1] - tol && y <= b[1] + b[3] + tol) return it;
   }
@@ -2111,6 +2207,12 @@ async function onDrawDown(e) {
   if (R.tool === 'select' || ITEM_FOR_TOOL[R.tool]) {
     const hit = hitItem(view, x, y);
     if (hit && (R.tool === 'select' || ITEM_FOR_TOOL[R.tool].includes(hit.t))) {
+      if (hit.t === 'link' && R.sel?.item === hit) {
+        // zweites Antippen: Ziel ändern
+        const before = snapshot(view.n);
+        if (await askLink(hit)) { R.undo.push({ n: view.n, strokes: before }); saveAnnos(view.n); paintAnnos(view); }
+        return;
+      }
       selectItem({ n: view.n, item: hit });
       drawing = { view, mode: 'move', item: hit, start: [x, y], orig: structuredClone(hit), before: snapshot(view.n), id: e.pointerId };
       return;
@@ -2158,6 +2260,13 @@ async function onDrawDown(e) {
     const item = { t: 'stamp', g: R.stamp, x, y, s: settings.stampSize || DEFAULT_STAMP_SIZE, c: '#111' };
     addItem(view, item, before);
     drawing = { view, mode: 'move', item, start: [x, y], orig: structuredClone(item), before: null, id: e.pointerId };
+    return;
+  }
+  if (R.tool === 'link') {
+    drawing = null;
+    const item = { t: 'link', x, y, s: 0.024, tp: Math.min(R.doc.numPages, view.n + 1), ty: 0, label: '' };
+    if (!await askLink(item)) return;
+    addItem(view, item, before);
     return;
   }
   if (R.tool === 'text') {
@@ -2415,6 +2524,8 @@ function onStageUp(e) {
   }
   if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 600) {
     if (R.annotate) return; // im Anmerke-Modus kein Umblättern per Tippen
+    const link = !R.half && linkAt(e.clientX, e.clientY);
+    if (link) { jumpTo(link); return; }
     const st = $('#stage').getBoundingClientRect();
     const rx = (e.clientX - st.left) / st.width;
     if (rx < 0.3) goPrev();
@@ -3388,7 +3499,7 @@ function bindUI() {
   buildStampBar();
   document.fonts?.load(`40px ${STAMP_FONT}`).then(() => { for (const w of $$('#pages .page')) if (w.view) paintAnnos(w.view); }).catch(() => {});
   for (const b of $$('#anno-bar .tool[data-tool]')) {
-    b.addEventListener('click', () => { R.tool = b.dataset.tool; if (b.dataset.color) R.color = b.dataset.color; if (!['select', 'stamp', 'text', 'rect'].includes(R.tool)) selectItem(null); updateToolUI(); });
+    b.addEventListener('click', () => { R.tool = b.dataset.tool; if (b.dataset.color) R.color = b.dataset.color; if (!['select', 'stamp', 'text', 'rect', 'link'].includes(R.tool)) selectItem(null); updateToolUI(); });
   }
   for (const b of $$('#anno-bar .tool[data-size]')) {
     b.addEventListener('click', () => { settings.penSize = +b.dataset.size; saveSettings(); updateToolUI(); });

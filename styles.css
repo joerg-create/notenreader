@@ -651,3 +651,8 @@ body.scanning { overflow: hidden; }
 .pr-train-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 14px; }
 .pr-train-row input { width: 52px; text-align: center; padding: 0 4px; min-height: 36px; border: 0; border-radius: 8px;
   background: rgba(255,255,255,.1); color: #f2f2f2; font-size: 16px; }
+
+/* Sprungmarken */
+#jump-back { position: absolute; left: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 30;
+  background: #1f62d0; color: #fff; border: 0; box-shadow: 0 4px 14px rgba(0,0,0,.25); gap: 6px; }
+#jump-back[hidden] { display: none; }
