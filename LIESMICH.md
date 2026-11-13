@@ -2,7 +2,9 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.11)
+## Was sie kann (Version 1.12)
+- **Weiße Ränder abschneiden:** Die Leseansicht erkennt auf jeder Seite den Notenbereich und vergrößert ihn auf die ganze Anzeige (Standard: an). Über das Buch-Symbol „Ansicht“ lässt es sich pro Stück oder für alle Stücke ausschalten. Anmerkungen bleiben an ihrer Stelle.
+- **Alle Setlists löschen** im Reiter Setlists; **Weiß** als Stiftfarbe.
 - **Metronom und Stimmgerät:** Knopf mit dem Metronom-Symbol oben in der Leseansicht und auf der Hauptseite. Metronom: Tempo (Plus/Minus, Regler, „Tap“), Taktart mit betonter Eins, Unterteilung, Lautstärke. Das Tempo wird pro Stück gemerkt. Es läuft beim Blättern weiter; eine kleine Anzeige unten rechts zeigt das Tempo und stoppt es. Stimmgerät: braucht beim ersten Mal die Mikrofon-Erlaubnis, zeigt Ton und Abweichung in Cent (grün = stimmt). Kammerton einstellbar (Standard 443 Hz), Anzeige für B-, Es- und F-Instrumente, Referenzton zum Mitspielen.
 - **Lineal und Retusche:** Im Anmerke-Modus das Lineal-Symbol. „Linie“ zieht gerade Linien (rasten waagerecht/senkrecht ein), „Notensystem“ zieht 5 Notenlinien auf einmal auf (schräg nach unten ziehen bestimmt den Linienabstand, wird gemerkt). Retusche: „Weißer Pinsel“ malt frei weiß über, „Abdecken“ legt ein weißes Rechteck, „Lasso“ deckt eine umfahrene Fläche weiß ab. Alles lässt sich mit demselben Werkzeug antippen, verschieben, am orangen Griff anpassen und löschen; Strichstärke über die drei Stärke-Knöpfe.
 - **Abgleich zwischen Geräten:** Einstellungen → „Abgleich exportieren“ schreibt Tags, Anmerkungen, Setlists, Löschungen und die seit dem letzten Abgleich neuen PDFs in eine Datei „Notenreader-Abgleich …json“ (auf dem iPad über das Teilen-Menü „In Dateien sichern“ → iCloud Drive). Auf dem anderen Gerät „Abgleich einlesen“. Stücke werden über Dateiname und Größe erkannt, die jeweils neuere Änderung gewinnt. Die Daten jedes Geräts liegen sonst getrennt im Browser-Speicher.

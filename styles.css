@@ -547,3 +547,9 @@ body.scanning { overflow: hidden; }
 .sl-head:has(.sl-head-btns) { flex-wrap: wrap; }
 .sl-head:has(.sl-head-btns) h2 { flex: 1 0 auto; }
 .sl-head-btns { margin-left: auto; }
+
+/* Zuschnitt (1.12) */
+.page { overflow: hidden; }
+.page canvas.anno { inset: auto; }
+.dlg-sub { margin: 16px 0 6px; font-size: 15px; }
+.dlg-note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }

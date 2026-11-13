@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.12.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1105,7 +1105,7 @@ function playSetlist(sl, index) {
 /* ---------- Leseansicht ---------- */
 const R = {
   queue: [], qi: 0, setlist: null, score: null, doc: null, page: 1,
-  cache: new Map(), annos: new Map(), annoImgs: new Map(), renderToken: 0,
+  cache: new Map(), crops: new Map(), annos: new Map(), annoImgs: new Map(), renderToken: 0,
   annotate: false, tool: 'pen', color: '#1a1a1a', undo: [], sawPen: false, sel: null, stamp: '\uE522',
   chromeTimer: null, wakeLock: null,
 };
@@ -1145,9 +1145,78 @@ async function openReader(queue, qi = 0, opts = {}) {
   requestWakeLock();
 }
 
+/* Weiße Ränder abschneiden
+   Die Seite wird klein gerendert, dunkle Pixel als Zeilen- und Spaltenprofil gezählt.
+   Kleine abgesetzte Flecken (Scanner-Staub, Lochrand-Striche) fallen weg, weil nur
+   zusammenhängende Bereiche mit nennenswertem Anteil am Inhalt zählen. */
+function cropEnabled() {
+  const s = R.score;
+  if (s && typeof s.crop === 'boolean') return s.crop;
+  return settings.autoCrop !== false;
+}
+function getCrop(page, n) {
+  if (!R.crops.has(n)) R.crops.set(n, detectCrop(page).catch(() => null));
+  return R.crops.get(n);
+}
+function profileRuns(prof, n) {
+  const gap = Math.max(3, Math.round(n * 0.035));
+  const runs = [];
+  let cur = null, empty = 0, total = 0;
+  for (let i = 0; i < n; i++) {
+    const v = prof[i];
+    total += v;
+    if (v > 0) {
+      if (cur && empty <= gap) { cur.end = i; cur.mass += v; } else { cur = { start: i, end: i, mass: v }; runs.push(cur); }
+      empty = 0;
+    } else empty++;
+  }
+  const keep = runs.filter((r) => r.mass >= Math.max(6, total * 0.004));
+  if (!keep.length) return null;
+  return [keep[0].start, keep[keep.length - 1].end + 1];
+}
+async function detectCrop(page) {
+  const vp1 = page.getViewport({ scale: 1 });
+  const sc = 420 / Math.max(vp1.width, vp1.height);
+  const vp = page.getViewport({ scale: sc });
+  const cv = document.createElement('canvas');
+  const W = cv.width = Math.ceil(vp.width), H = cv.height = Math.ceil(vp.height);
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const d = ctx.getImageData(0, 0, W, H).data;
+  cv.width = cv.height = 0;
+  const dark = new Uint8Array(W * H);
+  for (let i = 0, j = 0; j < dark.length; i += 4, j++) dark[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) < 165000 ? 1 : 0;
+  let x0 = 0, x1 = W, y0 = 0, y1 = H;
+  for (let pass = 0; pass < 2; pass++) {
+    const rows = new Float32Array(H);
+    for (let y = 0; y < H; y++) { let c = 0; for (let x = x0; x < x1; x++) c += dark[y * W + x]; rows[y] = c; }
+    const yr = profileRuns(rows, H);
+    if (!yr) return null;
+    [y0, y1] = yr;
+    const cols = new Float32Array(W);
+    for (let y = y0; y < y1; y++) for (let x = 0; x < W; x++) cols[x] += dark[y * W + x];
+    const xr = profileRuns(cols, W);
+    if (!xr) return null;
+    [x0, x1] = xr;
+  }
+  // etwas Luft lassen
+  const px = W * 0.015, py = H * 0.015;
+  let cx = Math.max(0, x0 - px) / W, cw = Math.min(W, x1 + px) / W - cx;
+  let cy = Math.max(0, y0 - py) / H, ch = Math.min(H, y1 + py) / H - cy;
+  // Kaum Rand: nichts tun, damit die Seite nicht unnötig springt
+  if (cw > 0.93 && ch > 0.93) return null;
+  // Wenig Inhalt (z. B. letzte Seite mit einer Zeile): nicht riesig aufblasen,
+  // sondern nach unten auffüllen, bis der Ausschnitt ungefähr Seitenform hat
+  const minH = Math.min(1, cw * 0.75);
+  if (ch < minH) { ch = minH; if (cy + ch > 1) cy = Math.max(0, 1 - ch); }
+  return [cx, cy, cw, ch];
+}
+
 function closeDoc() {
   for (const v of R.cache.values()) v.promise.then(freeView).catch(() => {});
   R.cache.clear();
+  R.crops.clear();
   R.annos.clear();
   for (const v of R.annoImgs.values()) v.bitmap?.close?.();
   R.annoImgs.clear();
@@ -1223,7 +1292,8 @@ function updateReaderInfo() {
 
 async function getPageView(n, maxW, maxH) {
   const mode = viewMode();
-  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}`;
+  const cropOn = cropEnabled();
+  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}|${cropOn ? 'c' : ''}`;
   if (R.cache.has(key)) {
     const v = R.cache.get(key);
     R.cache.delete(key); R.cache.set(key, v);
@@ -1233,23 +1303,32 @@ async function getPageView(n, maxW, maxH) {
   const promise = (async () => {
     const page = await doc.getPage(n);
     const vp1 = page.getViewport({ scale: 1 });
-    const scale = mode === 'width' ? maxW / vp1.width : Math.min(maxW / vp1.width, maxH / vp1.height);
-    const cssW = Math.floor(vp1.width * scale);
+    // Zuschnitt: sichtbarer Ausschnitt [x, y, w, h] relativ zur Seite
+    const c = (cropOn && await getCrop(page, n)) || [0, 0, 1, 1];
+    const fw = vp1.width * c[2], fh = vp1.height * c[3];
+    const scale = mode === 'width' ? maxW / fw : Math.min(maxW / fw, maxH / fh);
+    const cssW = Math.floor(vp1.width * scale); // ganze Seite (für Anmerkungen)
     const cssH = Math.floor(vp1.height * scale);
+    const boxW = Math.floor(fw * scale), boxH = Math.floor(fh * scale); // sichtbarer Teil
+    const offX = Math.round(c[0] * cssW), offY = Math.round(c[1] * cssH);
     let dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     const maxArea = 9e6; // iOS hat ein knappes Speicherlimit für Canvas
-    if (cssW * cssH * dpr * dpr > maxArea) dpr = Math.sqrt(maxArea / (cssW * cssH));
-    const vp = page.getViewport({ scale: scale * dpr });
+    if (boxW * boxH * dpr * dpr > maxArea) dpr = Math.sqrt(maxArea / (boxW * boxH));
+    const vp = page.getViewport({ scale: scale * dpr, offsetX: -offX * dpr, offsetY: -offY * dpr });
     const canvas = h('canvas', { class: 'pdf' });
-    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
-    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(boxW * dpr); canvas.height = Math.floor(boxH * dpr);
+    canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
     const anno = h('canvas', { class: 'anno' });
     anno.style.width = cssW + 'px'; anno.style.height = cssH + 'px';
+    anno.style.left = -offX + 'px'; anno.style.top = -offY + 'px';
     const wrap = h('div', { class: 'page', 'data-page': n });
-    wrap.style.width = cssW + 'px'; wrap.style.height = cssH + 'px';
+    wrap.style.width = boxW + 'px'; wrap.style.height = boxH + 'px';
     wrap.append(canvas, anno);
-    const view = { n, wrap, canvas, anno, cssW, cssH, dpr: Math.min(dpr, 2) };
+    // Anmerkungs-Ebene deckt die ganze Seite ab, deshalb Auflösung begrenzen
+    let adpr = Math.min(dpr, 2);
+    if (cssW * cssH * adpr * adpr > maxArea) adpr = Math.sqrt(maxArea / (cssW * cssH));
+    const view = { n, wrap, canvas, anno, cssW, cssH, dpr: adpr };
     wrap.view = view;
     await drawAnnos(view);
     return view;
@@ -1366,15 +1445,38 @@ async function chooseView() {
     ['single', 'Immer eine Seite', 'Eine Seite, so groß wie möglich.'],
     ['width', 'Breite füllen', 'Seite füllt die Breite, Umblättern scrollt zuerst nach unten. Gut fürs iPhone im Querformat.'],
   ];
-  const body = h('div', { class: 'choice' }, opts.map(([v, t, d]) => h('label', {},
-    h('input', { type: 'radio', name: 'view', value: v, checked: settings.view === v }),
-    h('div', {}, h('b', {}, t), h('small', {}, d)))));
+  const cropThis = h('input', { type: 'checkbox', checked: cropEnabled() });
+  const cropAll = h('input', { type: 'checkbox', checked: settings.autoCrop !== false });
+  const body = h('div', {},
+    h('div', { class: 'choice' }, opts.map(([v, t, d]) => h('label', {},
+      h('input', { type: 'radio', name: 'view', value: v, checked: settings.view === v }),
+      h('div', {}, h('b', {}, t), h('small', {}, d))))),
+    h('h4', { class: 'dlg-sub' }, 'Weiße Ränder abschneiden'),
+    h('label', { class: 'check-row' }, cropThis, h('span', {}, R.score ? `Bei „${R.score.title}“` : 'Bei diesem Stück')),
+    h('label', { class: 'check-row' }, cropAll, h('span', {}, 'Standard für alle Stücke')),
+    h('p', { class: 'dlg-note' }, 'Erkennt den Notenbereich jeder Seite und vergrößert ihn auf die ganze Anzeige.'));
   const r = await dialog({ title: 'Ansicht', body, actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', value: 'ok', primary: true }] });
   if (r === 'ok') {
     const v = $('input[name=view]:checked', body)?.value;
+    let changed = false;
     if (v && v !== settings.view) {
-      settings.view = v; saveSettings();
+      settings.view = v;
       if (isTwoUp() && R.page % 2 === 0) R.page = Math.max(1, R.page - 1);
+      changed = true;
+    }
+    const wasCrop = cropEnabled();
+    if (cropAll.checked !== (settings.autoCrop !== false)) { settings.autoCrop = cropAll.checked; changed = true; }
+    if (R.score) {
+      // Stück-Einstellung nur merken, wenn sie vom Standard abweicht
+      const def = settings.autoCrop !== false;
+      const want = cropThis.checked;
+      const had = R.score.crop;
+      if (want === def) delete R.score.crop; else R.score.crop = want;
+      if (had !== R.score.crop) db.put('scores', R.score);
+    }
+    if (wasCrop !== cropEnabled()) changed = true;
+    if (changed) {
+      saveSettings();
       R.cache.clear();
       renderSpread();
     }
@@ -1672,7 +1774,7 @@ function buildStampBar() {
 }
 
 function pagePoint(view, e) {
-  const r = view.wrap.getBoundingClientRect();
+  const r = view.anno.getBoundingClientRect();
   return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
 }
 function hitItem(view, x, y) {
