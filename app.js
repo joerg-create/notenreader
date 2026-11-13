@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.16.1';
+const APP_VERSION = '1.16.2';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -2352,6 +2352,40 @@ function blobToBase64(blob) {
     fr.readAsDataURL(blob);
   });
 }
+/* Fertige Dateien ausliefern. Auf iPad/iPhone über das Teilen-Menü („In Dateien sichern“).
+   Teilen verlangt einen frischen Fingertipp, nach langem Erstellen ist der alte verbraucht –
+   deshalb zeigt ein Dialog einen eigenen Knopf. Auf dem Mac/PC ganz normal herunterladen. */
+async function deliverFiles(files, title, hint) {
+  const mb = files.reduce((a, f) => a + f.size, 0) / 1048576;
+  const canShare = !!navigator.canShare?.({ files });
+  const download = () => {
+    for (const f of files) {
+      const a = h('a', { href: URL.createObjectURL(f), download: f.name });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 120000);
+    }
+  };
+  if (!canShare) { download(); toast(files.length > 1 ? `${files.length} Dateien gespeichert (Downloads)` : 'Gespeichert (Downloads)', 4000); return; }
+  let shared = false;
+  const r = await dialog({
+    title,
+    body: [
+      h('p', {}, files.length > 1 ? `${files.length} Dateien, zusammen ${mb.toFixed(0)} MB.` : `${files[0].name} (${mb < 1 ? mb.toFixed(1) : mb.toFixed(0)} MB)`),
+      h('p', { class: 'note' }, hint),
+      h('button', { type: 'button', class: 'btn primary', style: 'width:100%', onclick: async (e) => {
+        try { await navigator.share({ files, title }); shared = true; $('#dlg').closeWith('ok'); }
+        catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error(err);
+          toast('Teilen ging nicht. Versuch es mit weniger Daten oder nochmal.', 5000);
+        }
+      } }, icon('upload'), files.length > 1 ? `${files.length} Dateien teilen / sichern` : 'Teilen / In Dateien sichern'),
+    ],
+    actions: [{ label: 'Schließen', value: null }],
+  });
+  return shared || r === 'ok';
+}
+
 async function exportBackup() {
   toast('Sicherung wird erstellt …', 60000);
   const [allScores, allSetlists, allAnnos] = await Promise.all([db.all('scores'), db.all('setlists'), db.all('annos')]);
@@ -2366,13 +2400,30 @@ async function exportBackup() {
     first = false;
   }
   parts.push(']}');
-  const blob = new Blob(parts, { type: 'application/json' });
   const date = new Date().toISOString().slice(0, 10);
-  const a = h('a', { href: URL.createObjectURL(blob), download: `Notenreader-Sicherung-${date}.json` });
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-  toast('Sicherung gespeichert');
+  const file = new File(parts, `Notenreader-Sicherung-${date}.json`, { type: 'application/json' });
+  toast('Sicherung erstellt', 1500);
+  await deliverFiles([file], 'Sicherung fertig', 'Am besten in iCloud Drive sichern.');
 }
+async function importFiles2(files) {
+  files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  if (files.length === 1) return importBackup(files[0]);
+  const total = { changed: 0, added: 0, removed: 0, annos: 0, sets: 0, missing: 0 };
+  let device = '', exported = 0;
+  for (const [i, f] of files.entries()) {
+    toast(`Teil ${i + 1} von ${files.length} wird gelesen …`, 60000);
+    let data;
+    try { data = JSON.parse(await f.text()); } catch { toast(`„${f.name}“ ist keine Abgleich-Datei`); continue; }
+    if (data.app !== 'Notenreader' || data.type !== 'sync') { toast(`„${f.name}“ ist keine Abgleich-Datei`); continue; }
+    const st = await importSync(data, { quiet: true });
+    for (const k of Object.keys(total)) if (k !== 'missing') total[k] += st[k];
+    total.missing = st.missing;
+    device = data.device; exported = data.exported;
+    data = null;
+  }
+  await showSyncSummary(total, { device, exported });
+}
+
 async function importBackup(file) {
   try {
     toast('Sicherung wird gelesen …', 60000);
@@ -2472,7 +2523,7 @@ async function openSettings() {
     h('p', { class: 'note' }, 'Tags, Anmerkungen, Setlists und neue Noten zwischen iPads austauschen: hier exportieren und die Datei in iCloud Drive sichern, auf dem anderen Gerät einlesen. Die jeweils neuere Änderung gewinnt.'),
     h('div', { class: 'menu' },
       h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportSync(); } }, icon('upload'), 'Abgleich exportieren'),
-      pickOption({ iconName: 'download', title: 'Abgleich einlesen', sub: settings.syncLastExport ? `Zuletzt exportiert: ${new Date(settings.syncLastExport).toLocaleString('de-DE')}` : 'Datei „Notenreader-Abgleich …“ vom anderen Gerät', accept: '.json,application/json', onFiles: (f) => importBackup(f[0]) })),
+      pickOption({ iconName: 'download', title: 'Abgleich einlesen', sub: settings.syncLastExport ? `Zuletzt exportiert: ${new Date(settings.syncLastExport).toLocaleString('de-DE')}` : 'Datei(en) „Notenreader-Abgleich …“ vom anderen Gerät, bei mehreren Teilen alle markieren', accept: '.json,application/json', multiple: true, onFiles: (f) => importFiles2(f) })),
     h('div', { class: 'section-title' }, 'Sicherung'),
     h('p', { class: 'note' }, 'Deine Noten liegen nur in diesem Browser auf diesem Gerät. Eine Sicherung enthält alle PDFs, Anmerkungen und Setlists und lässt sich auf einem anderen Gerät wieder einlesen.'),
     h('div', { class: 'menu' },
@@ -2772,31 +2823,41 @@ async function exportSync() {
       return keyById.has(id) ? { k: 'anno', id: `${keyById.get(id)}#${page}`, at: t.at } : null;
     }).filter(Boolean);
     const exported = Date.now();
-    const parts = [JSON.stringify({ app: 'Notenreader', type: 'sync', format: 1, device: settings.deviceName || '', exported, scores: outScores, setlists: outSets, annos: outAnnos, tombs: outTombs }).slice(0, -1), ',"files":['];
-    let first = true;
-    for (const [i, s] of withPdf.entries()) {
-      showProgress(i, withPdf.length, s.title);
-      const f = await db.get('files', s.id);
-      if (!f) continue;
-      const b64 = await blobToBase64(new Blob([f.data], { type: 'application/pdf' }));
-      parts.push(`${first ? '' : ','}{"k":${JSON.stringify(keyById.get(s.id))},"thumb":${JSON.stringify(s.thumb || '')},"data":"${b64}"}`);
-      first = false;
-    }
-    parts.push(']}');
+    const head = JSON.stringify({ app: 'Notenreader', type: 'sync', format: 1, device: settings.deviceName || '', exported, scores: outScores, setlists: outSets, annos: outAnnos, tombs: outTombs }).slice(0, -1);
     const d = new Date(exported);
     const pad = (n) => String(n).padStart(2, '0');
-    const name = `Notenreader-Abgleich ${(settings.deviceName || 'iPad').replace(/[\\/:*?"<>|]/g, '-')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}.json`;
-    const file = new File(parts, name, { type: 'application/json' });
+    const base = `Notenreader-Abgleich ${(settings.deviceName || 'iPad').replace(/[\\/:*?"<>|]/g, '-')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
+    // Große Mengen in mehrere Dateien teilen: jede Datei ist für sich vollständig lesbar
+    const LIMIT = (window.__syncLimitMb || 40) * 1048576;
+    const chunks = [[]];
+    let cur = 0;
+    for (const s of withPdf) {
+      const sz = s.size || 0;
+      if (cur && cur + sz > LIMIT) { chunks.push([]); cur = 0; }
+      chunks[chunks.length - 1].push(s); cur += sz;
+    }
+    const out = [];
+    let done = 0;
+    for (const [ci, list] of chunks.entries()) {
+      const parts = [head, `,"part":${ci + 1},"parts":${chunks.length},"files":[`];
+      let first = true;
+      for (const s of list) {
+        showProgress(done++, withPdf.length, s.title);
+        const f = await db.get('files', s.id);
+        if (!f) continue;
+        const b64 = await blobToBase64(new Blob([f.data], { type: 'application/pdf' }));
+        parts.push(`${first ? '' : ','}{"k":${JSON.stringify(keyById.get(s.id))},"thumb":${JSON.stringify(s.thumb || '')},"data":"${b64}"}`);
+        first = false;
+      }
+      parts.push(']}');
+      const name = chunks.length > 1 ? `${base} Teil ${String(ci + 1).padStart(2, '0')} von ${chunks.length}.json` : `${base}.json`;
+      out.push(new File(parts, name, { type: 'application/json' }));
+    }
     hideProgress();
     settings.syncLastExport = exported; saveSettings();
-    if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: name }); toast('Abgleich erstellt. In „Dateien“ in iCloud Drive sichern.', 5000); return; }
-      catch (e) { if (e.name === 'AbortError') { toast('Teilen abgebrochen'); return; } }
-    }
-    const a = h('a', { href: URL.createObjectURL(file), download: name });
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    toast('Abgleich gespeichert (Downloads)', 4000);
+    await deliverFiles(out, 'Abgleich fertig', out.length > 1
+      ? 'Im Teilen-Menü „In Dateien sichern“ wählen und einen Ordner in iCloud Drive nehmen. Auf dem anderen Gerät bei „Abgleich einlesen“ alle Teile auf einmal auswählen.'
+      : 'Im Teilen-Menü „In Dateien sichern“ wählen und in iCloud Drive ablegen. Auf dem anderen Gerät unter Einstellungen → „Abgleich einlesen“.');
   } catch (e) {
     console.error(e);
     hideProgress();
@@ -2804,7 +2865,7 @@ async function exportSync() {
   }
 }
 
-async function importSync(data) {
+async function importSync(data, { quiet = false } = {}) {
   const stats = { changed: 0, added: 0, removed: 0, annos: 0, sets: 0, missing: 0 };
   const byKey = new Map(scores.map((s) => [syncKey(s), s]));
   const files = new Map((data.files || []).map((f) => [f.k, f]));
@@ -2896,6 +2957,10 @@ async function importSync(data) {
       } else if ((r.mod || 0) > (sl.mod || 0)) {
         sl.sid = r.sid; sl.name = r.name; sl.items = items; sl.mod = r.mod; sl.sig = setSig(sl);
         await db.rawPut('setlists', sl); stats.sets++;
+      } else if (sl.sid === r.sid && (r.mod || 0) === (sl.mod || 0) && items.length > sl.items.length) {
+        // Teil-Dateien: Stücke, die erst mit einem späteren Teil ankommen, nachtragen
+        sl.items = items; sl.sig = setSig(sl);
+        await db.rawPut('setlists', sl);
       } else if (sl.sid !== r.sid && (r.mod || 0) === 0 && (sl.mod || 0) === 0) {
         // gleiche Setlist aus forScore auf beiden Geräten: gemeinsame Kennung übernehmen
         sl.sid = r.sid; await db.rawPut('setlists', sl);
@@ -2904,6 +2969,11 @@ async function importSync(data) {
   } finally { hideProgress(); }
   renderLibrary(); renderSetlists();
   if (state.tab === 'inbox') renderInbox();
+  if (quiet) return stats;
+  await showSyncSummary(stats, data);
+  return stats;
+}
+async function showSyncSummary(stats, data) {
   const parts = [];
   if (stats.added) parts.push(`${stats.added} neue Stücke`);
   if (stats.changed) parts.push(`${stats.changed} Stücke geändert`);
