@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -3139,6 +3139,7 @@ function bindUI() {
   practice = initPractice({
     h, icon, settings, saveSettings, toast,
     getScore: () => (!$('#reader').hidden && R.score) || null,
+    getScores: () => scores,
     saveScore: (sc) => db.put('scores', sc),
     db,
   });

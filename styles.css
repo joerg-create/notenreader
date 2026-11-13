@@ -598,3 +598,15 @@ body.scanning { overflow: hidden; }
 }
 #play-pill .pill-stop { margin-left: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.15); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
 #practice .pl-input + .btn { flex: none; }
+
+/* Apple Music (1.15) */
+.pl-more summary { cursor: pointer; font-size: 13px; color: #b9bbc4; margin-bottom: 8px; }
+.pl-more { display: flex; flex-direction: column; gap: 8px; }
+.pl-more[open] > * + * { margin-top: 8px; }
+.am-list { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; border-radius: 10px; background: rgba(255,255,255,.04); }
+.am-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; border-radius: 8px; }
+.am-item:hover, .am-item:active { background: rgba(255,255,255,.08); }
+.am-item img, .am-noart { width: 40px; height: 40px; border-radius: 6px; flex: none; object-fit: cover; background: rgba(255,255,255,.1); display: inline-flex; align-items: center; justify-content: center; }
+.am-t { display: flex; flex-direction: column; min-width: 0; }
+.am-t b, .am-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-t small { color: #9a9ca6; }

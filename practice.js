@@ -50,7 +50,7 @@ const TRANSPOSE = { C: 0, B: 2, Es: 9, F: 7 };
 const TEMPO_NAMES = [[40, 'Grave'], [60, 'Largo'], [66, 'Larghetto'], [76, 'Adagio'], [108, 'Andante'], [120, 'Moderato'], [156, 'Allegro'], [176, 'Vivace'], [200, 'Presto'], [999, 'Prestissimo']];
 const tempoName = (bpm) => TEMPO_NAMES.find(([max]) => bpm < max)[1];
 
-export function initPractice({ h, icon, settings, saveSettings, toast, getScore, saveScore, db }) {
+export function initPractice({ h, icon, settings, saveSettings, toast, getScore, getScores, saveScore, db }) {
   const st = {
     bpm: settings.metroBpm || 100, beats: settings.metroBeats || 4, sub: settings.metroSub || 1,
     vol: settings.metroVol ?? 0.8, a4: settings.tunerA4 || 443, trans: settings.tunerTrans || 'C',
@@ -227,7 +227,7 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
   document.body.append(panel, pill);
   let tab = 'metro', dots = [];
   const hooks = { panelOpen: () => !panel.hidden, openPanel: () => open('play'), rerender: () => render() };
-  const player = makePlayer({ h, icon, toast, getScore, saveScore, db, onChange: hooks });
+  const player = makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange: hooks });
   let refNote = 'B', refOct = 3;
 
   function render() {

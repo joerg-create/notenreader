@@ -7,8 +7,9 @@ const fmt = (t) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 const audioKey = (id) => `audio|${id}`;
+import { amAvailable, amAuthorize, amInstance, amAuthorized, amPlaylists, amPlaylistTracks, amSearch, amPlay, amPause, amSeek, amState, amOn, normTitle } from './applemusic.js';
 
-export function makePlayer({ h, icon, toast, getScore, saveScore, db, onChange }) {
+export function makePlayer({ h, icon, toast, getScore, getScores, saveScore, db, onChange }) {
   const el = new Audio();
   el.preload = 'auto';
   el.preservesPitch = true; el.webkitPreservesPitch = true; el.mozPreservesPitch = true;
@@ -47,15 +48,17 @@ export function makePlayer({ h, icon, toast, getScore, saveScore, db, onChange }
 
   function play() {
     audioSession();
+    if (amPlaying()) amPause();
     el.playbackRate = rate;
     el.play().catch((e) => { console.error(e); toast('Die Audiodatei lässt sich nicht abspielen'); });
   }
   function toggle() { if (el.paused) play(); else el.pause(); }
 
   function update() {
-    const playing = !!el.src && !el.paused;
+    const own = !!el.src && !el.paused;
+    const playing = own || amPlaying();
     pill.hidden = !(playing && !onChange?.panelOpen?.());
-    pill.replaceChildren(h('span', {}, `♪ ${fmt(el.currentTime)}`), h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); el.pause(); } }, '■'));
+    pill.replaceChildren(h('span', {}, `♪ ${fmt(own ? el.currentTime : amState().time)}`), h('span', { class: 'pill-stop', onclick: (e) => { e.stopPropagation(); el.pause(); amPause(); update(); } }, '■'));
     if (!ui) return;
     ui.time.textContent = `${fmt(el.currentTime)} / ${fmt(el.duration)}`;
     if (!ui.seeking) { ui.seek.max = isFinite(el.duration) ? el.duration : 0; ui.seek.value = el.currentTime; }
@@ -102,6 +105,157 @@ export function makePlayer({ h, icon, toast, getScore, saveScore, db, onChange }
     if (v) s.music.url = v; else delete s.music.url;
     await saveScore(s);
     return true;
+  }
+
+  /* ----- Apple Music (MusicKit) ----- */
+  let amUi = null, amView = 'main', amLoopA = null, amLoopB = null, amBusy = false;
+  let amLists = null, amListId = settingsGet('amPlaylist'), amTracks = [], amFilter = '';
+  function settingsGet(k) { try { return localStorage.getItem('nr-' + k) || ''; } catch { return ''; } }
+  function settingsSet(k, v) { try { localStorage.setItem('nr-' + k, v); } catch { /* egal */ } }
+  if (amAvailable()) {
+    // Schon angemeldet? Dann still im Hintergrund starten
+    amInstance().then(() => onChange?.rerender?.()).catch(() => {});
+    const tickAm = () => {
+      const st = amState();
+      if (amLoopA != null && amLoopB != null && st.time >= amLoopB) amSeek(amLoopA);
+      amUpdate();
+    };
+    amOn('playbackTimeDidChange', tickAm);
+    amOn('playbackStateDidChange', () => { amUpdate(); update(); });
+  }
+  const amPlaying = () => amAvailable() && amState().playing;
+  function amUpdate() {
+    if (!amUi) return;
+    const st = amState();
+    const mine = amUi.track && (st.id === amUi.track.id || st.id === amUi.track.lib);
+    const t = mine ? st.time : 0, d = mine ? st.dur : amUi.track?.dur || 0;
+    amUi.time.textContent = `${fmt(t)} / ${fmt(d)}`;
+    if (!amUi.seeking) { amUi.seek.max = d || 0; amUi.seek.value = t; }
+    const playing = mine && st.playing;
+    amUi.playB.textContent = playing ? '❚❚ Pause' : '▶ Abspielen';
+    amUi.playB.className = `btn ${playing ? 'danger' : 'primary'} pr-go`;
+    amUi.aB.textContent = amLoopA == null ? 'A setzen' : `A ${fmt(amLoopA)}`;
+    amUi.bB.textContent = amLoopB == null ? 'B setzen' : `B ${fmt(amLoopB)}`;
+    amUi.aB.classList.toggle('active', amLoopA != null);
+    amUi.bB.classList.toggle('active', amLoopB != null);
+  }
+  async function amAssign(s, track) {
+    s.music = { ...(s.music || {}), am: { id: track.id, lib: track.lib, name: track.name, artist: track.artist, dur: track.dur } };
+    await saveScore(s);
+    amLoopA = amLoopB = null;
+    amView = 'main';
+    onChange?.rerender?.();
+  }
+  async function amAutoAssign(tracks) {
+    const list = getScores?.() || [];
+    const idx = tracks.map((t) => ({ t, n: normTitle(t.name) })).filter((x) => x.n.length >= 3);
+    let n = 0;
+    for (const sc of list) {
+      if (sc.music?.am) continue;
+      const st = normTitle(sc.title);
+      if (st.length < 3) continue;
+      const hit = idx.find((x) => x.n === st) || idx.find((x) => st.length >= 6 && x.n.length >= 6 && (x.n.startsWith(st) || st.startsWith(x.n)));
+      if (!hit) continue;
+      sc.music = { ...(sc.music || {}), am: { id: hit.t.id, lib: hit.t.lib, name: hit.t.name, artist: hit.t.artist, dur: hit.t.dur } };
+      await saveScore(sc);
+      n++;
+    }
+    return n;
+  }
+  function amSection(s) {
+    const m = s.music || {};
+    amUi = null;
+    if (!amAvailable()) return [];
+    if (!amAuthorized()) {
+      return [h('button', { class: 'btn primary pr-go', onclick: async () => {
+        try { if (await amAuthorize()) toast('Mit Apple Music verbunden'); } catch (e) { console.error(e); toast('Anmeldung bei Apple Music hat nicht geklappt'); }
+        onChange?.rerender?.();
+      } }, '♫ Mit Apple Music anmelden'),
+      h('p', { class: 'pr-note' }, 'Einmal pro Gerät mit der Apple-ID anmelden. Danach spielen die Lieder aus deiner Mediathek direkt hier (Apple-Music-Abo nötig).')];
+    }
+    if (amView === 'pick') return amPicker(s);
+    if (!m.am) {
+      return [h('div', { class: 'pr-row' },
+        h('button', { class: 'btn primary', onclick: () => { amView = 'pick'; onChange?.rerender?.(); } }, '♫ Lied zuordnen'))];
+    }
+    const seek = h('input', { type: 'range', min: 0, max: 0, step: 0.5, value: 0, 'aria-label': 'Position',
+      oninput: () => { amUi.seeking = true; },
+      onchange: () => { amSeek(+seek.value); amUi.seeking = false; } });
+    amUi = {
+      track: m.am, seek, seeking: false,
+      time: h('span', { class: 'pr-sub' }),
+      playB: h('button', { class: 'btn primary pr-go', onclick: async () => {
+        const st = amState();
+        const mine = st.id === m.am.id || st.id === m.am.lib;
+        try { if (mine && st.playing) amPause(); else { el.pause(); await amPlay(m.am); } } catch (e) { console.error(e); toast('Abspielen nicht möglich (Apple-Music-Abo aktiv?)'); }
+        amUpdate(); update();
+      } }),
+      aB: h('button', { class: 'btn', onclick: () => { amLoopA = amState().time; if (amLoopB != null && amLoopB <= amLoopA) amLoopB = null; amUpdate(); } }),
+      bB: h('button', { class: 'btn', onclick: () => { if (amLoopA == null) amLoopA = 0; const t = amState().time; if (t > amLoopA) { amLoopB = t; amSeek(amLoopA); } amUpdate(); } }),
+    };
+    queueMicrotask(amUpdate);
+    return [
+      h('div', { class: 'pl-file' }, h('span', { class: 'pl-name' }, `${m.am.name}${m.am.artist ? ' · ' + m.am.artist : ''}`), amUi.time),
+      h('div', { class: 'pl-seek' }, seek),
+      h('div', { class: 'pr-row' },
+        h('button', { class: 'btn round small', 'aria-label': '5 Sekunden zurück', onclick: () => amSeek(amState().time - 5) }, '↺'),
+        amUi.playB,
+        h('button', { class: 'btn round small', 'aria-label': '5 Sekunden vor', onclick: () => amSeek(amState().time + 5) }, '↻')),
+      h('div', { class: 'pr-row' }, amUi.aB, amUi.bB, h('button', { class: 'btn', onclick: () => { amLoopA = amLoopB = null; amUpdate(); } }, 'Schleife aus')),
+      h('div', { class: 'pr-row' },
+        h('button', { class: 'btn', onclick: () => { amView = 'pick'; onChange?.rerender?.(); } }, 'Anderes Lied'),
+        h('button', { class: 'btn', onclick: async () => { delete s.music.am; await saveScore(s); onChange?.rerender?.(); } }, 'Entfernen')),
+    ];
+  }
+  function amPicker(s) {
+    const listBox = h('div', { class: 'am-list' }, h('p', { class: 'pr-note' }, 'Lade …'));
+    const showTracks = (tracks) => {
+      const f = normTitle(amFilter);
+      const st = normTitle(s.title);
+      const shown = tracks.filter((t) => !f || normTitle(`${t.name} ${t.artist}`).includes(f))
+        .sort((a, b) => (normTitle(b.name).includes(st) ? 1 : 0) - (normTitle(a.name).includes(st) ? 1 : 0));
+      listBox.replaceChildren(...(shown.length ? shown.slice(0, 200).map((t) => h('button', { class: 'am-item', onclick: () => amAssign(s, t) },
+        t.art ? h('img', { src: t.art, alt: '' }) : h('span', { class: 'am-noart' }, '♫'),
+        h('span', { class: 'am-t' }, h('b', {}, t.name), h('small', {}, `${t.artist} · ${fmt(t.dur)}`)))) : [h('p', { class: 'pr-note' }, 'Keine Treffer')]));
+    };
+    const search = h('input', { type: 'search', class: 'pl-input', placeholder: 'Filtern oder im Katalog suchen', value: amFilter,
+      oninput: () => { amFilter = search.value; if (amListId) showTracks(amTracks); } });
+    const sel = h('select', { 'aria-label': 'Playlist', onchange: async () => { amListId = sel.value; settingsSet('amPlaylist', amListId); await loadTracks(); } },
+      h('option', { value: '' }, 'Playlist wählen …'));
+    async function loadTracks() {
+      if (!amListId) { listBox.replaceChildren(); return; }
+      listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Lade Playlist …'));
+      try { amTracks = await amPlaylistTracks(amListId); showTracks(amTracks); }
+      catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Playlist konnte nicht geladen werden')); }
+    }
+    (async () => {
+      try {
+        amLists = amLists || await amPlaylists();
+        sel.replaceChildren(h('option', { value: '' }, 'Playlist wählen …'), ...amLists.map((p) => h('option', { value: p.id }, p.name)));
+        if (amListId && amLists.some((p) => p.id === amListId)) { sel.value = amListId; await loadTracks(); }
+        else listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Wähle oben deine Playlist.'));
+      } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Mediathek konnte nicht geladen werden')); }
+    })();
+    return [
+      h('div', { class: 'pr-row' }, sel),
+      h('div', { class: 'pr-row' }, search,
+        h('button', { class: 'btn', onclick: async () => {
+          const term = search.value.trim() || s.title;
+          listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Suche im Katalog …'));
+          try { showTracks(await amSearch(term)); } catch (e) { console.error(e); listBox.replaceChildren(h('p', { class: 'pr-note' }, 'Suche fehlgeschlagen')); }
+        } }, 'Katalog')),
+      listBox,
+      h('div', { class: 'pr-row' },
+        h('button', { class: 'btn', onclick: async () => {
+          if (amBusy) return;
+          if (!amTracks.length) { toast('Zuerst eine Playlist wählen'); return; }
+          amBusy = true;
+          try { const n = await amAutoAssign(amTracks); toast(n ? `${n} ${n === 1 ? 'Stück' : 'Stücke'} über den Titel zugeordnet` : 'Keine weiteren Titel passend gefunden'); }
+          finally { amBusy = false; }
+          amView = 'main'; onChange?.rerender?.();
+        } }, 'Alle Stücke automatisch zuordnen'),
+        h('button', { class: 'btn', onclick: () => { amView = 'main'; onChange?.rerender?.(); } }, 'Zurück')),
+    ];
   }
 
   function render() {
@@ -155,13 +309,17 @@ export function makePlayer({ h, icon, toast, getScore, saveScore, db, onChange }
     } else {
       ui = null;
       audioPart = [
-        h('p', { class: 'pr-note' }, 'Eigene Aufnahme oder MP3 hinterlegen: Dann spielt der Notenreader sie selbst ab, auch langsamer und mit Wiederholschleife. Lieder aus Apple Music selbst sind kopiergeschützt und gehen nur über den Link.'),
+        h('p', { class: 'pr-note' }, 'Eigene Aufnahme oder MP3 hinterlegen: Die spielt der Notenreader selbst ab, auch langsamer (ohne Tonhöhenänderung) und mit Wiederholschleife.'),
         h('div', { class: 'pr-row' }, pick),
       ];
     }
+    const amPart = amSection(s);
+    const linkPart = amPart.length
+      ? [h('details', { class: 'pl-more' }, h('summary', {}, 'Stattdessen Link zur Musik-App'), linkRow, openB)]
+      : [linkRow, openB];
     const body = h('div', { class: 'pr-body' },
       h('div', { class: 'pr-sect' }, 'Apple Music'),
-      linkRow, openB,
+      ...amPart, ...linkPart,
       h('div', { class: 'pr-sect' }, 'Eigene Aufnahme'),
       ...audioPart);
     queueMicrotask(update);
@@ -171,7 +329,7 @@ export function makePlayer({ h, icon, toast, getScore, saveScore, db, onChange }
 
   function scoreChanged() {
     const s = getScore();
-    if (s && loadedFor !== s.id) load(s).then(update);
+    if (s && loadedFor !== s.id) { amLoopA = amLoopB = null; amView = 'main'; load(s).then(update); }
   }
 
   return { render, scoreChanged, update, isPlaying: () => !!el.src && !el.paused, stop: () => el.pause() };

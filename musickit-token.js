@@ -1,0 +1,3 @@
+// Entwickler-Zugangscode für MusicKit. Gilt nur für die Notenreader-Adressen und läuft am 15.05.2027 ab.
+export const DEV_TOKEN = 'eyJhbGciOiJFUzI1NiIsImtpZCI6IkE3SlQ1TEpDWVciLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJHQ0xMRjk5M0xZIiwiaWF0IjoxNzk0NTgyMjU2LCJleHAiOjE4MTAzNTU2NTYsIm9yaWdpbiI6WyJodHRwczovL2pvZXJnLWNyZWF0ZS5naXRodWIuaW8iLCJodHRwOi8vbG9jYWxob3N0Ojg3NjUiLCJodHRwOi8vMTI3LjAuMC4xOjg3NjUiXX0.whTRUUWKB-3jDS8bAgNupvax_uRHsj7sI9uxEgfKBuxvMYHF_6WGdzpJDmsv5nTochvN84-sgUIhUfgRiR1kGA';
+export const DEV_TOKEN_EXPIRES = '15.05.2027';
