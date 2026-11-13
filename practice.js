@@ -325,5 +325,16 @@ export function initPractice({ h, icon, settings, saveSettings, toast, getScore,
     player.scoreChanged();
     render();
   }
-  return { open, close, toggle: (which) => (panel.hidden ? open(which) : close()), scoreChanged, isOpen: () => !panel.hidden };
+  let lastTool = 'metro';
+  function toggle(which) {
+    if (panel.hidden) return open(which);
+    if (which && which !== tab) return open(which);
+    close();
+  }
+  return {
+    open, close, toggle, scoreChanged, isOpen: () => !panel.hidden,
+    // Metronom-Knopf: Metronom/Stimmgerät; Musik-Knopf: Mitspielen
+    toggleTools: () => { if (tab !== 'play') lastTool = tab; toggle(tab === 'play' || panel.hidden ? lastTool : undefined); },
+    toggleMusic: () => { if (tab !== 'play') lastTool = tab; toggle('play'); },
+  };
 }

@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -35,6 +35,7 @@ function h(tag, attrs = {}, ...kids) {
 
 const ICONS = {
   back: '<path d="M15 18l-6-6 6-6"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   chev: '<path d="M9 18l6-6-6-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -2404,6 +2405,25 @@ async function importBackup(file) {
   }
 }
 
+const THEMES = [
+  ['classic', 'Klassisch', 'Warmes Papier, Bernstein', ['#f5f2ec', '#ffffff', '#c9821f', '#1f2a44']],
+  ['blue', 'Blau', 'Kühl und ruhig', ['#eef2f8', '#ffffff', '#2f6fd0', '#16233f']],
+  ['green', 'Salbei', 'Grün und natürlich', ['#eef2ec', '#ffffff', '#3f8a5a', '#1e3326']],
+  ['bordeaux', 'Bordeaux', 'Konzertsaal, Weinrot', ['#f6efee', '#ffffff', '#9c2f45', '#2e1a20']],
+  ['contrast', 'Kontrast', 'Schwarz-weiß, gut lesbar auf der Bühne', ['#ffffff', '#ffffff', '#111111', '#000000']],
+];
+function applyTheme() {
+  const d = document.documentElement;
+  d.dataset.theme = settings.theme || 'classic';
+  const a = settings.appearance || 'auto';
+  const dark = a === 'dark' || (a === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  if (dark) d.dataset.dark = ''; else delete d.dataset.dark;
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) meta.content = getComputedStyle(d).getPropertyValue('--bg').trim() || '#1f2a44';
+}
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme()); } catch { /* alt */ }
+applyTheme();
+
 async function openSettings() {
   let storageInfo = '';
   try {
@@ -2412,7 +2432,21 @@ async function openSettings() {
     const persisted = await navigator.storage?.persisted?.();
     if (persisted) storageInfo += ' · dauerhaft gespeichert';
   } catch { /* egal */ }
+  const themeGrid = h('div', { class: 'theme-grid' }, THEMES.map(([id, name, sub, [bg, sf, ac, ink]]) => h('button', {
+    type: 'button', class: `theme-card${(settings.theme || 'classic') === id ? ' active' : ''}`,
+    onclick: (e) => { settings.theme = id; saveSettings(); applyTheme(); for (const b of themeGrid.children) b.classList.toggle('active', b === e.currentTarget); },
+  },
+    h('span', { class: 'theme-prev', style: `background:${bg}` },
+      h('span', { class: 'tp-bar', style: `background:${ink}` }),
+      h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-dot', style: `background:${ac}` })),
+      h('span', { class: 'tp-card', style: `background:${sf}` }, h('span', { class: 'tp-line', style: `background:${ink}` }))),
+    h('b', {}, name), h('small', {}, sub))));
   const body = h('div', {},
+    h('div', { class: 'section-title' }, 'Design'),
+    themeGrid,
+    h('div', { class: 'seg-row' }, [['auto', 'Automatisch'], ['light', 'Hell'], ['dark', 'Dunkel']].map(([v, l]) => h('label', { class: 'seg-opt' },
+      h('input', { type: 'radio', name: 'sappear', value: v, checked: (settings.appearance || 'auto') === v, onchange: () => { settings.appearance = v; saveSettings(); applyTheme(); } }),
+      h('span', {}, l)))),
     h('div', { class: 'section-title' }, 'Ansicht beim Lesen'),
     h('div', { class: 'choice' }, [
       ['auto', 'Ganze Seite', 'Im Querformat auf großen Bildschirmen zwei Seiten nebeneinander.'],
@@ -3143,8 +3177,10 @@ function bindUI() {
     saveScore: (sc) => db.put('scores', sc),
     db,
   });
-  $('#r-practice').addEventListener('click', () => practice.toggle());
-  $('#btn-practice').addEventListener('click', () => practice.toggle());
+  $('#r-practice').addEventListener('click', () => practice.toggleTools());
+  $('#btn-practice').addEventListener('click', () => practice.toggleTools());
+  $('#r-music').addEventListener('click', () => practice.toggleMusic());
+  $('#btn-music').addEventListener('click', () => practice.toggleMusic());
   $('#a-done').addEventListener('click', () => setAnnotate(false));
   $('#a-undo').addEventListener('click', undoAnno);
   $('#a-clear').addEventListener('click', clearPageAnnos);

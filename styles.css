@@ -18,21 +18,28 @@
   --sar: env(safe-area-inset-right, 0px);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171f;
-    --surface: #1d212c;
-    --surface-2: #272c39;
-    --text: #eceae4;
-    --muted: #9a9eab;
-    --line: #333949;
-    --accent: #e8a33d;
-    --accent-strong: #f2b456;
-    --accent-text: #1a1406;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
-    color-scheme: dark;
-  }
+:root[data-dark] {
+  --bg: #14171f;
+  --surface: #1d212c;
+  --surface-2: #272c39;
+  --text: #eceae4;
+  --muted: #9a9eab;
+  --line: #333949;
+  --accent: #e8a33d;
+  --accent-strong: #f2b456;
+  --accent-text: #1a1406;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+  color-scheme: dark;
 }
+/* Designs (1.16) */
+:root[data-theme=blue] { --bg: #eef2f8; --surface: #ffffff; --surface-2: #e2e8f2; --text: #16233f; --muted: #5e6a80; --line: #d3dbe8; --accent: #2f6fd0; --accent-strong: #1f57ad; --accent-text: #ffffff; --ink: #16233f; }
+:root[data-theme=blue][data-dark] { --bg: #0f1522; --surface: #172033; --surface-2: #1f2a40; --text: #e7edf8; --muted: #93a0b8; --line: #2a3650; --accent: #6aa2ff; --accent-strong: #8db8ff; --accent-text: #0b1426; }
+:root[data-theme=green] { --bg: #eef2ec; --surface: #ffffff; --surface-2: #e1e8dd; --text: #1e3326; --muted: #5f6f63; --line: #d2dccd; --accent: #3f8a5a; --accent-strong: #2e6e45; --accent-text: #ffffff; --ink: #1e3326; }
+:root[data-theme=green][data-dark] { --bg: #111814; --surface: #19231d; --surface-2: #222f27; --text: #e6efe8; --muted: #94a69a; --line: #2c3a31; --accent: #6cc48c; --accent-strong: #8ad6a5; --accent-text: #0c1a11; }
+:root[data-theme=bordeaux] { --bg: #f6efee; --surface: #ffffff; --surface-2: #ece0de; --text: #2e1a20; --muted: #75626a; --line: #e2d2d0; --accent: #9c2f45; --accent-strong: #7d2236; --accent-text: #ffffff; --ink: #2e1a20; }
+:root[data-theme=bordeaux][data-dark] { --bg: #181012; --surface: #23171a; --surface-2: #2e1f23; --text: #f2e6e8; --muted: #b0989d; --line: #3a282c; --accent: #e06a82; --accent-strong: #ec8ea0; --accent-text: #22090f; }
+:root[data-theme=contrast] { --bg: #ffffff; --surface: #ffffff; --surface-2: #f0f0f0; --text: #000000; --muted: #333333; --line: #000000; --accent: #000000; --accent-strong: #000000; --accent-text: #ffffff; --ink: #000000; --shadow: none; }
+:root[data-theme=contrast][data-dark] { --bg: #000000; --surface: #000000; --surface-2: #1a1a1a; --text: #ffffff; --muted: #dddddd; --line: #ffffff; --accent: #ffd400; --accent-strong: #ffe14d; --accent-text: #000000; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -610,3 +617,18 @@ body.scanning { overflow: hidden; }
 .am-t { display: flex; flex-direction: column; min-width: 0; }
 .am-t b, .am-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .am-t small { color: #9a9ca6; }
+
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.theme-card { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 2px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.theme-card small { color: var(--muted); font-size: 12px; line-height: 1.25; }
+.theme-prev { display: flex; flex-direction: column; gap: 4px; height: 64px; border-radius: 8px; padding: 0 0 6px; overflow: hidden; margin-bottom: 4px; border: 1px solid rgba(0,0,0,.08); }
+.tp-bar { height: 12px; flex: none; }
+.tp-card { margin: 0 8px; height: 16px; border-radius: 4px; display: flex; align-items: center; padding: 0 6px; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.tp-dot { width: 8px; height: 8px; border-radius: 50%; }
+.tp-line { height: 3px; width: 60%; border-radius: 2px; opacity: .6; }
+.seg-row { display: flex; gap: 6px; margin-top: 10px; }
+.seg-opt { flex: 1; }
+.seg-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.seg-opt span { display: block; text-align: center; padding: 8px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.seg-opt input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
