@@ -5,7 +5,7 @@ import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } fro
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.10.1';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1931,7 +1931,11 @@ function onDrawUp(e) {
   }
   if (d.mode === 'create-staff') {
     const it = d.item;
-    if (Math.abs(it.x2 - it.x1) < 0.02) { paintAnnos(d.view); toast('Notensystem waagerecht aufziehen. Schräg nach unten ziehen bestimmt die Höhe.'); return; }
+    if (Math.abs(it.x2 - it.x1) < 0.02) {
+      // Nur angetippt: ein System über die übliche Breite setzen, mittig auf die getippte Stelle
+      it.x1 = 0.08; it.x2 = 0.92; it.y = Math.max(0, d.start[1] - it.h / 2);
+      toast('Notensystem gesetzt. Zum Anpassen antippen und am orangen Griff ziehen.', 3500);
+    }
     if (it.x2 < it.x1) [it.x1, it.x2] = [it.x2, it.x1];
     if (d.sized) { settings.staffH = it.h; saveSettings(); }
     addItem(d.view, it, d.before);
