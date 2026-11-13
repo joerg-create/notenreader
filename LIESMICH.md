@@ -3,7 +3,7 @@
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
 ## Was sie kann (Version 1.13)
-- **Zuschneiden von Hand:** Schere-Symbol oben in der Leseansicht oder „Zuschneiden“ unter der Vorschau im Eingang. Den Rahmen an den Griffen ziehen, verschieben oder neu aufziehen; gilt für alle Seiten oder nur für eine Seite. „Ganze Seite“ passt das Blatt ohne Zuschnitt ein, „Automatisch“ nimmt wieder die Erkennung.
+- **Zuschneiden von Hand:** Zuschneide-Symbol (zwei Winkel) oben in der Leseansicht oder „Zuschneiden“ unter der Vorschau im Eingang. Den Rahmen an den Griffen ziehen, verschieben oder neu aufziehen; gilt für alle Seiten oder nur für eine Seite. „Ganze Seite“ passt das Blatt ohne Zuschnitt ein, „Automatisch“ nimmt wieder die Erkennung.
 - **Weiße Ränder abschneiden:** Die Leseansicht erkennt auf jeder Seite den Notenbereich und vergrößert ihn auf die ganze Anzeige (Standard: an). Über das Buch-Symbol „Ansicht“ lässt es sich pro Stück oder für alle Stücke ausschalten. Anmerkungen bleiben an ihrer Stelle.
 - **Alle Setlists löschen** im Reiter Setlists; **Weiß** als Stiftfarbe.
 - **Metronom und Stimmgerät:** Knopf mit dem Metronom-Symbol oben in der Leseansicht und auf der Hauptseite. Metronom: Tempo (Plus/Minus, Regler, „Tap“), Taktart mit betonter Eins, Unterteilung, Lautstärke. Das Tempo wird pro Stück gemerkt. Es läuft beim Blättern weiter; eine kleine Anzeige unten rechts zeigt das Tempo und stoppt es. Stimmgerät: braucht beim ersten Mal die Mikrofon-Erlaubnis, zeigt Ton und Abweichung in Cent (grün = stimmt). Kammerton einstellbar (Standard 443 Hz), Anzeige für B-, Es- und F-Instrumente, Referenzton zum Mitspielen.
