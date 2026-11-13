@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.21.1';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -2876,6 +2876,7 @@ async function openSettings(startPage) {
     h('span', { class: 'set-txt' }, h('b', {}, p.title), h('small', {}, p.sub())),
     icon('chev'));
   const showMain = () => {
+    body.dataset.settingsPage = 'main';
     body.replaceChildren(...[
       h('div', { class: 'set-list' }, pages.map(row)),
       appPages.length ? h('div', { class: 'section-title' }, 'iPad-App') : null,
@@ -2884,7 +2885,8 @@ async function openSettings(startPage) {
     window.dispatchEvent(new CustomEvent('notenreader-settings', { detail: { page: 'main', container: body } }));
   };
   const show = (p) => {
-    const box = h('div', { class: 'set-page' });
+    body.dataset.settingsPage = p.id;
+    const box = h('div', { class: 'set-page', 'data-settings-page': p.id });
     body.replaceChildren(
       h('button', { type: 'button', class: 'btn small set-back', onclick: showMain }, icon('back'), 'Einstellungen'),
       h('h3', { class: 'set-h' }, p.title), box);
