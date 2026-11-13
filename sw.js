@@ -1,6 +1,6 @@
 // Offline-Unterstützung: App-Dateien werden zwischengespeichert.
 // Bei einer neuen Version CACHE hochzählen.
-const CACHE = 'notenreader-v19';
+const CACHE = 'notenreader-v20';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './db.js', './forscore.js', './scan.js', './practice.js', './manifest.webmanifest',
   './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/Bravura.woff2', './vendor/wach.mp4',

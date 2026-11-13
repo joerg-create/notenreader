@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -984,7 +984,9 @@ function renderSetlists() {
   const sorted = setlists.slice().sort((a, b) => collator.compare(a.name, b.name));
   root.replaceChildren(
     h('div', { class: 'sl-head' }, h('h2', {}, 'Setlists'),
-      h('button', { class: 'btn primary', onclick: newSetlist }, icon('plus'), 'Neue Setlist')),
+      h('div', { class: 'sl-head-btns' },
+        sorted.length ? h('button', { class: 'btn danger', onclick: deleteAllSetlists }, icon('trash'), 'Alle löschen') : null,
+        h('button', { class: 'btn primary', onclick: newSetlist }, icon('plus'), 'Neue Setlist'))),
     sorted.length ? h('div', { class: 'list' }, sorted.map((sl) => h('div', { class: 'row' },
       h('div', { class: 'grow', onclick: () => { state.openSetlist = sl.id; renderSetlists(); } },
         h('div', { class: 't' }, sl.name),
@@ -993,6 +995,20 @@ function renderSetlists() {
       h('button', { class: 'btn icon ghost', 'aria-label': 'Öffnen', onclick: () => { state.openSetlist = sl.id; renderSetlists(); } }, icon('chev')))))
       : h('div', { class: 'empty' }, h('h2', {}, 'Noch keine Setlists'),
         h('p', {}, 'Stelle Stücke für ein Konzert, eine Probe oder einen Gottesdienst in der richtigen Reihenfolge zusammen.')));
+}
+
+async function deleteAllSetlists() {
+  const n = setlists.length;
+  if (!n) return;
+  if (!await confirmDialog('Alle Setlists löschen?', `${n} ${n === 1 ? 'Setlist wird' : 'Setlists werden'} gelöscht. Die Noten selbst bleiben erhalten.`, 'Alle löschen')) return;
+  for (const sl of setlists) {
+    if (sl.sid) addTomb('set', sl.sid);
+    await db.del('setlists', sl.id);
+  }
+  setlists = [];
+  state.openSetlist = null;
+  renderSetlists();
+  toast(`${n} ${n === 1 ? 'Setlist' : 'Setlists'} gelöscht`);
 }
 
 async function newSetlist() {
