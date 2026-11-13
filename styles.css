@@ -403,7 +403,7 @@ label.btn.pick { position: relative; cursor: pointer; }
 .row-open:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .row-thumb { flex: none; width: 34px; height: 46px; border-radius: 4px; overflow: hidden; background: #fff; border: 1px solid var(--line); }
 .row-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
-.row-ref { flex: none; min-width: 48px; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; color: var(--muted); }
+.row-ref { flex: none; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; color: var(--muted); padding: 2px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .row-ref:empty { min-width: 0; display: none; }
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .row-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -427,7 +427,7 @@ body.has-az main { padding-right: calc(30px + var(--sar)); }
 body.reading #az-bar, body.reading #az-bubble { display: none !important; }
 @media (max-width: 600px) {
   .row-tags { display: none; }
-  .row-ref { min-width: 40px; font-size: 12px; }
+  .row-ref { font-size: 12px; padding: 1px 6px; }
   .row-open { gap: 10px; padding: 6px 8px; }
   .seg .btn { width: 38px; }
 }

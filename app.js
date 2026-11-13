@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.23.1';
+const APP_VERSION = '1.23.2';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -692,10 +692,11 @@ function scoreRow(s) {
     },
     state.selecting ? h('span', { class: 'check' }, selected ? icon('check') : null) : null,
     h('span', { class: 'row-thumb' }, s.thumb ? h('img', { src: s.thumb, alt: '', loading: 'lazy', decoding: 'async' }) : null),
-    h('span', { class: 'row-ref' }, s.ref || ''),
     h('span', { class: 'row-main' },
       h('span', { class: 'row-title' }, s.title),
       h('span', { class: 'row-sub' }, [s.composer, metaLine(s)].filter(Boolean).join(' · ') || `${s.pages} ${s.pages === 1 ? 'Seite' : 'Seiten'}`)),
+    // ID rechts, damit alle Titel bündig untereinander stehen
+    s.ref ? h('span', { class: 'row-ref', title: 'ID' }, s.ref) : null,
     s.tags?.length ? h('span', { class: 'row-tags' }, s.tags.slice(0, 3).map((t) => h('span', { class: 'tag' }, t)), s.tags.length > 3 ? h('span', { class: 'tag more' }, `+${s.tags.length - 3}`) : null) : null),
     state.selecting ? null : h('button', { class: 'btn row-more', 'aria-label': `Optionen für ${s.title}`, onclick: (e) => { e.stopPropagation(); scoreMenu(s); } }, icon('more')));
 }
