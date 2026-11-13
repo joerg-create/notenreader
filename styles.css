@@ -656,3 +656,9 @@ body.scanning { overflow: hidden; }
 #jump-back { position: absolute; left: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 30;
   background: #1f62d0; color: #fff; border: 0; box-shadow: 0 4px 14px rgba(0,0,0,.25); gap: 6px; }
 #jump-back[hidden] { display: none; }
+
+/* Nachtansicht */
+#reader.night, #reader.night #stage, #reader.night #pages, #reader.night #stage.scroll #pages { background: #141414; }
+#reader.night .page { background: #141414; }
+#reader.night .page canvas { filter: invert(.92) hue-rotate(180deg); }
+#reader.night .page + .page { box-shadow: -1px 0 0 #333; }

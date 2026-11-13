@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.18.1';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1700,10 +1700,15 @@ async function chooseView() {
   const cropThis = h('input', { type: 'checkbox', checked: cropEnabled() });
   const cropAll = h('input', { type: 'checkbox', checked: settings.autoCrop !== false });
   const halfTurn = h('input', { type: 'checkbox', checked: !!settings.halfTurn });
+  const nightSel = h('div', { class: 'seg-row' }, [['off', 'Aus'], ['on', 'An'], ['auto', 'Wie das Gerät']].map(([v, l]) => h('label', { class: 'seg-opt' },
+    h('input', { type: 'radio', name: 'night', value: v, checked: (settings.night || 'off') === v, onchange: () => { settings.night = v; saveSettings(); applyNight(); } }), h('span', {}, l))));
   const body = h('div', {},
     h('div', { class: 'choice' }, opts.map(([v, t, d]) => h('label', {},
       h('input', { type: 'radio', name: 'view', value: v, checked: settings.view === v }),
       h('div', {}, h('b', {}, t), h('small', {}, d))))),
+    h('h4', { class: 'dlg-sub' }, 'Nachtansicht'),
+    nightSel,
+    h('p', { class: 'dlg-note' }, 'Helle Noten auf schwarzem Grund, blendet im dunklen Saal nicht. „Wie das Gerät“ schaltet sich mit dem Dunkelmodus vom iPad ein.'),
     h('h4', { class: 'dlg-sub' }, 'Umblättern'),
     h('label', { class: 'check-row' }, halfTurn, h('span', {}, 'Halbe Seite umblättern', h('small', { class: 'sub' }, 'Erst kommt oben der Anfang der nächsten Seite, das Ende der aktuellen bleibt unten stehen. Nur bei einer Seite auf dem Bildschirm.'))),
     h('h4', { class: 'dlg-sub' }, 'Weiße Ränder abschneiden'),
@@ -2681,12 +2686,19 @@ const THEMES = [
   ['bordeaux', 'Bordeaux', 'Konzertsaal, Weinrot', ['#f6efee', '#ffffff', '#9c2f45', '#2e1a20']],
   ['contrast', 'Kontrast', 'Schwarz-weiß, gut lesbar auf der Bühne', ['#ffffff', '#ffffff', '#111111', '#000000']],
 ];
+// Nachtansicht: Noten hell auf schwarz (settings.night: 'off' | 'on' | 'auto' = wenn das Gerät dunkel ist)
+function nightOn() {
+  const n = settings.night || 'off';
+  return n === 'on' || (n === 'auto' && document.documentElement.hasAttribute('data-dark'));
+}
+function applyNight() { document.getElementById('reader')?.classList.toggle('night', nightOn()); }
 function applyTheme() {
   const d = document.documentElement;
   d.dataset.theme = settings.theme || 'classic';
   const a = settings.appearance || 'auto';
   const dark = a === 'dark' || (a === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   if (dark) d.dataset.dark = ''; else delete d.dataset.dark;
+  applyNight();
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.content = getComputedStyle(d).getPropertyValue('--bg').trim() || '#1f2a44';
 }
