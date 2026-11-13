@@ -2,7 +2,8 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.8)
+## Was sie kann (Version 1.9)
+- **Abgleich zwischen Geräten:** Einstellungen → „Abgleich exportieren“ schreibt Tags, Anmerkungen, Setlists, Löschungen und die seit dem letzten Abgleich neuen PDFs in eine Datei „Notenreader-Abgleich …json“ (auf dem iPad über das Teilen-Menü „In Dateien sichern“ → iCloud Drive). Auf dem anderen Gerät „Abgleich einlesen“. Stücke werden über Dateiname und Größe erkannt, die jeweils neuere Änderung gewinnt. Die Daten jedes Geräts liegen sonst getrennt im Browser-Speicher.
 - **Noten abfotografieren:** Im Eingang „Fotografieren“ oder unter Importieren „Noten fotografieren“ / „Fotos von Noten“. Die vier Eckpunkte auf die Blattecken ziehen (mit Lupe), „Übernehmen“ zieht die Seite gerade. Die Scan-Optik entfernt Schatten und macht das Papier weiß. Beliebig viele Seiten nacheinander aufnehmen, Reihenfolge ändern, dann „Als Stück sichern“: daraus wird ein PDF, das im Eingang zum Taggen landet.
 - **Bildschirm anlassen:** Unter Einstellungen „Beim Lesen“ (Standard), „Immer“ oder „Aus“. Nutzt die Wake-Lock-Funktion des Browsers, auf iPad/iPhone zusätzlich ein stummes Mini-Video (vendor/wach.mp4), weil ältere iOS-Versionen die Funktion in Home-Bildschirm-Apps ignorieren.
 - **Übersicht für große Sammlungen:** Umschalter Liste/Kacheln neben der Sortierung. Die Liste zeigt kompakte Zeilen mit ID, Titel, Komponist, Instrument, Genre und Tags. Je nach Sortierung gruppiert (Anfangsbuchstabe, Komponist, Genre, ID) mit mitlaufenden Überschriften. Am rechten Rand eine A–Z-Leiste zum Springen (tippen oder mit dem Finger entlangfahren). Filter zeigen die Anzahl je Wert, darüber steht, wie viele Stücke gerade angezeigt werden.

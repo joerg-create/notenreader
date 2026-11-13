@@ -5,7 +5,7 @@ import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } fro
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -96,7 +96,7 @@ function dialog({ title, body, actions = [], onOpen }) {
   return new Promise((resolve) => {
     const d = $('#dlg');
     let result = null;
-    const close = (value) => { result = value; d.close(); };
+    const close = (value) => { result = value; resolve(value); d.close(); };
     const primary = actions.find((a) => a.primary);
     const form = h('form', {
       class: 'dlg',
@@ -109,7 +109,7 @@ function dialog({ title, body, actions = [], onOpen }) {
       onclick: () => close(a.value),
     }, a.label))) : null);
     d.replaceChildren(form);
-    d.onclose = () => resolve(result);
+    d.onclose = () => { if (!d.open) resolve(result); }; // verspätetes close-Ereignis eines vorigen Dialogs ignorieren
     d.onclick = (e) => { if (e.target === d) close(null); };
     d.closeWith = close;
     d.showModal();
@@ -133,6 +133,7 @@ const state = { tab: 'library', query: '', openSetlist: null, filter: { instrume
 async function loadData() {
   [scores, setlists] = await Promise.all([db.all('scores'), db.all('setlists')]);
   await migrateScores();
+  await syncBaseline();
 }
 const scoreById = (id) => scores.find((s) => s.id === id);
 
@@ -923,6 +924,7 @@ async function migrateScores() {
 
 async function deleteScore(s) {
   if (!await confirmDialog('Stück löschen?', `„${s.title}“ und alle Anmerkungen darin werden von diesem Gerät gelöscht.`)) return;
+  addTomb('score', syncKey(s));
   await db.del('scores', s.id);
   await db.del('files', s.id);
   await db.delPrefix('annos', s.id + '|');
@@ -1031,6 +1033,7 @@ function setlistDetail(sl) {
       h('button', { class: 'btn', onclick: () => pickScores(sl) }, icon('plus'), 'Stücke hinzufügen'),
       h('button', { class: 'btn danger', style: 'margin-left:auto', onclick: async () => {
         if (!await confirmDialog('Setlist löschen?', `„${sl.name}“ wird gelöscht. Die Noten selbst bleiben erhalten.`)) return;
+        if (sl.sid) addTomb('set', sl.sid);
         await db.del('setlists', sl.id);
         setlists = setlists.filter((x) => x.id !== sl.id);
         state.openSetlist = null; renderSetlists();
@@ -1404,7 +1407,7 @@ function saveAnnos(n) {
   const strokes = R.annos.get(n) || [];
   const img = R.annoImgs.get(n);
   if (strokes.length || img) db.put('annos', { key: annoKey(n), strokes, ...(img ? { img: img.blob, fs: img.fs } : {}) });
-  else db.del('annos', annoKey(n));
+  else { addTomb('anno', annoKey(n)); db.del('annos', annoKey(n)); }
 }
 // Bild aus forScore passend auf die Seite legen. forScore speichert die Anmerkung als Bildschirmbild
 // (768 Punkte breit); die Seite ist darin eingepasst und ggf. per Zuschnitt (rect/zoom) vergrößert.
@@ -1924,6 +1927,7 @@ async function importBackup(file) {
   try {
     toast('Sicherung wird gelesen …', 60000);
     const data = JSON.parse(await file.text());
+    if (data.app === 'Notenreader' && data.type === 'sync') { toast('Abgleich wird eingelesen …'); await importSync(data); return; }
     if (data.app !== 'Notenreader' || !Array.isArray(data.scores)) throw new Error('Keine Notenreader-Sicherung');
     const existing = new Set(scores.map((s) => s.id));
     let added = 0;
@@ -1978,6 +1982,11 @@ async function openSettings() {
       h('div', {}, h('b', {}, t), h('small', {}, d))))),
     h('div', { class: 'section-title' }, 'Umblättern'),
     h('p', { class: 'note' }, 'Tippen auf den rechten oder linken Rand, Wischen, oder ein Bluetooth-Pedal bzw. eine Tastatur (Pfeiltasten, Bild auf/ab, Leertaste).'),
+    h('div', { class: 'section-title' }, 'Abgleich mit anderen Geräten'),
+    h('p', { class: 'note' }, 'Tags, Anmerkungen, Setlists und neue Noten zwischen iPads austauschen: hier exportieren und die Datei in iCloud Drive sichern, auf dem anderen Gerät einlesen. Die jeweils neuere Änderung gewinnt.'),
+    h('div', { class: 'menu' },
+      h('button', { type: 'button', class: 'btn', onclick: () => { $('#dlg').closeWith(null); exportSync(); } }, icon('upload'), 'Abgleich exportieren'),
+      pickOption({ iconName: 'download', title: 'Abgleich einlesen', sub: settings.syncLastExport ? `Zuletzt exportiert: ${new Date(settings.syncLastExport).toLocaleString('de-DE')}` : 'Datei „Notenreader-Abgleich …“ vom anderen Gerät', accept: '.json,application/json', onFiles: (f) => importBackup(f[0]) })),
     h('div', { class: 'section-title' }, 'Sicherung'),
     h('p', { class: 'note' }, 'Deine Noten liegen nur in diesem Browser auf diesem Gerät. Eine Sicherung enthält alle PDFs, Anmerkungen und Setlists und lässt sich auf einem anderen Gerät wieder einlesen.'),
     h('div', { class: 'menu' },
@@ -2203,6 +2212,227 @@ async function scanFlow(initialFiles) {
   }
 
   nextPhoto();
+}
+
+
+/* ---------- Abgleich zwischen Geräten (Datei über iCloud Drive) ----------
+   Jedes Stück wird geräteübergreifend über Dateiname + Größe erkannt (die IDs sind je Gerät verschieden).
+   Geändert wird nach dem Prinzip „neuere Änderung gewinnt“ (Feld mod). Gelöschtes wird als Grabstein gemerkt. */
+const SCORE_SYNC_FIELDS = ['title', 'composer', 'ref', 'instruments', 'genre', 'tags', 'keywords', 'rating', 'difficulty', 'inbox'];
+const scoreSig = (s) => JSON.stringify(SCORE_SYNC_FIELDS.map((f) => s[f] ?? null));
+const setSig = (sl) => JSON.stringify([sl.name, sl.items]);
+const syncKey = (s) => `${normName(s.file || s.title)}|${s.size || 0}`;
+{
+  const rawPut = db.put;
+  db.rawPut = rawPut;
+  db.put = (store, v) => {
+    if (store === 'scores') { const g = scoreSig(v); if (v.sig !== undefined && v.sig !== g) v.mod = Date.now(); v.sig = g; }
+    else if (store === 'setlists') { const g = setSig(v); if (v.sig !== undefined && v.sig !== g) v.mod = Date.now(); v.sig = g; if (!v.sid) v.sid = uid(); }
+    else if (store === 'annos') v.mod = Date.now();
+    return rawPut(store, v);
+  };
+}
+// Ausgangsstand festhalten, damit Änderungen danach erkannt werden
+async function syncBaseline() {
+  for (const s of scores) if (s.sig === undefined) { s.sig = scoreSig(s); await db.rawPut('scores', s); }
+  for (const sl of setlists) if (sl.sig === undefined || !sl.sid) { sl.sig = setSig(sl); sl.sid = sl.sid || uid(); await db.rawPut('setlists', sl); }
+  if (!settings.syncSince) { settings.syncSince = Date.now(); saveSettings(); }
+}
+function tombs() { try { return JSON.parse(localStorage.getItem('nr-tomb') || '[]'); } catch { return []; } }
+function addTomb(k, id) {
+  const list = tombs().filter((t) => !(t.k === k && t.id === id));
+  list.push({ k, id, at: Date.now() });
+  try { localStorage.setItem('nr-tomb', JSON.stringify(list.slice(-3000))); } catch { /* voll */ }
+}
+
+async function exportSync() {
+  const since = settings.syncLastExport || settings.syncSince || Date.now();
+  const fresh = scores.filter((s) => !s.syncedIn && (s.added || 0) > since);
+  const allPdf = h('input', { type: 'checkbox' });
+  const devName = h('input', { value: settings.deviceName || '', placeholder: 'z. B. iPad Jörg', autocomplete: 'off' });
+  const freshMb = fresh.reduce((a, s) => a + (s.size || 0), 0) / 1048576;
+  const ok = await dialog({
+    title: 'Abgleich exportieren',
+    body: [
+      h('p', { class: 'note' }, 'Schreibt alle Tags, Anmerkungen und Setlists in eine Datei. Neue Noten seit dem letzten Abgleich kommen als PDF mit. Sichere die Datei in iCloud Drive und lies sie auf dem anderen iPad unter Einstellungen → „Abgleich einlesen“ ein.'),
+      field('Name dieses Geräts', devName),
+      h('p', {}, fresh.length ? `${fresh.length} neue ${fresh.length === 1 ? 'Stück' : 'Stücke'} mit PDF (${freshMb.toFixed(1)} MB)` : 'Keine neuen Stücke seit dem letzten Abgleich.'),
+      h('label', { class: 'check-row' }, allPdf, h('span', {}, `Alle PDFs mitnehmen (${(scores.reduce((a, s) => a + (s.size || 0), 0) / 1048576).toFixed(0)} MB, nur nötig, wenn das andere Gerät noch gar keine Noten hat)`)),
+    ],
+    actions: [{ label: 'Abbrechen', value: null }, { label: 'Exportieren', value: 'ok', primary: true }],
+  });
+  if (ok !== 'ok') return;
+  settings.deviceName = devName.value.trim(); saveSettings();
+  const withPdf = allPdf.checked ? scores : fresh;
+  showProgress(0, 0); $('#progress-text').textContent = 'Abgleich wird erstellt …';
+  try {
+    const keyById = new Map(scores.map((s) => [s.id, syncKey(s)]));
+    const outScores = scores.map((s) => {
+      const o = { k: keyById.get(s.id), mod: s.mod || 0, file: s.file || '', size: s.size || 0, pages: s.pages, added: s.added };
+      for (const f of SCORE_SYNC_FIELDS) o[f] = s[f] ?? null;
+      return o;
+    });
+    const outSets = setlists.map((sl) => ({ sid: sl.sid, name: sl.name, items: sl.items.map((id) => keyById.get(id)).filter(Boolean), mod: sl.mod || 0, created: sl.created }));
+    const outAnnos = [];
+    for (const a of await db.all('annos')) {
+      if (!a.strokes?.length) continue;
+      const [id, page] = a.key.split('|');
+      const k = keyById.get(id);
+      if (k) outAnnos.push({ k, p: +page, strokes: a.strokes, mod: a.mod || 0 });
+    }
+    const outTombs = tombs().map((t) => {
+      if (t.k !== 'anno') return t;
+      const [id, page] = t.id.split('|');
+      return keyById.has(id) ? { k: 'anno', id: `${keyById.get(id)}#${page}`, at: t.at } : null;
+    }).filter(Boolean);
+    const exported = Date.now();
+    const parts = [JSON.stringify({ app: 'Notenreader', type: 'sync', format: 1, device: settings.deviceName || '', exported, scores: outScores, setlists: outSets, annos: outAnnos, tombs: outTombs }).slice(0, -1), ',"files":['];
+    let first = true;
+    for (const [i, s] of withPdf.entries()) {
+      showProgress(i, withPdf.length, s.title);
+      const f = await db.get('files', s.id);
+      if (!f) continue;
+      const b64 = await blobToBase64(new Blob([f.data], { type: 'application/pdf' }));
+      parts.push(`${first ? '' : ','}{"k":${JSON.stringify(keyById.get(s.id))},"thumb":${JSON.stringify(s.thumb || '')},"data":"${b64}"}`);
+      first = false;
+    }
+    parts.push(']}');
+    const d = new Date(exported);
+    const pad = (n) => String(n).padStart(2, '0');
+    const name = `Notenreader-Abgleich ${(settings.deviceName || 'iPad').replace(/[\\/:*?"<>|]/g, '-')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}.json`;
+    const file = new File(parts, name, { type: 'application/json' });
+    hideProgress();
+    settings.syncLastExport = exported; saveSettings();
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); toast('Abgleich erstellt. In „Dateien“ in iCloud Drive sichern.', 5000); return; }
+      catch (e) { if (e.name === 'AbortError') { toast('Teilen abgebrochen'); return; } }
+    }
+    const a = h('a', { href: URL.createObjectURL(file), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    toast('Abgleich gespeichert (Downloads)', 4000);
+  } catch (e) {
+    console.error(e);
+    hideProgress();
+    toast('Abgleich konnte nicht erstellt werden');
+  }
+}
+
+async function importSync(data) {
+  const stats = { changed: 0, added: 0, removed: 0, annos: 0, sets: 0, missing: 0 };
+  const byKey = new Map(scores.map((s) => [syncKey(s), s]));
+  const files = new Map((data.files || []).map((f) => [f.k, f]));
+  showProgress(0, 0); $('#progress-text').textContent = 'Abgleich wird eingelesen …';
+  try {
+    // Stücke
+    const remoteScores = data.scores || [];
+    for (const [i, r] of remoteScores.entries()) {
+      let s = byKey.get(r.k);
+      if (!s) {
+        const f = files.get(r.k);
+        if (!f) { stats.missing++; continue; }
+        if (tombs().some((t) => t.k === 'score' && t.id === r.k && t.at >= (r.mod || 0))) continue;
+        showProgress(i, remoteScores.length, r.title);
+        const bin = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0));
+        const id = uid();
+        let thumb = f.thumb || '', pages = r.pages || 1;
+        if (!thumb) {
+          const doc = await pdfjsLib.getDocument({ data: bin.slice() }).promise;
+          try { thumb = await renderThumb(doc); pages = doc.numPages; } finally { doc.destroy(); }
+        }
+        await db.put('files', { id, data: bin.buffer });
+        s = { id, file: r.file, size: r.size, pages, added: r.added || Date.now(), opened: 0, lastPage: 1, thumb, syncedIn: true };
+        for (const fld of SCORE_SYNC_FIELDS) s[fld] = r[fld];
+        if (!Array.isArray(s.instruments)) s.instruments = [];
+        if (!Array.isArray(s.tags)) s.tags = [];
+        s.genre = s.genre || '';
+        s.mod = r.mod || 0; s.sig = scoreSig(s);
+        await db.rawPut('scores', s);
+        scores.push(s); byKey.set(r.k, s);
+        stats.added++;
+        continue;
+      }
+      if ((r.mod || 0) > (s.mod || 0) && scoreSig(r) !== scoreSig(s)) {
+        for (const fld of SCORE_SYNC_FIELDS) s[fld] = r[fld];
+        if (!Array.isArray(s.instruments)) s.instruments = [];
+        if (!Array.isArray(s.tags)) s.tags = [];
+        s.genre = s.genre || '';
+        s.mod = r.mod; s.sig = scoreSig(s);
+        await db.rawPut('scores', s);
+        stats.changed++;
+      }
+    }
+    // Anmerkungen
+    for (const a of data.annos || []) {
+      const s = byKey.get(a.k);
+      if (!s) continue;
+      const key = `${s.id}|${a.p}`;
+      const local = await db.get('annos', key);
+      if (local && (local.mod || 0) >= (a.mod || 0)) continue;
+      const rec = { ...(local || {}), key, strokes: a.strokes, mod: a.mod || 0 };
+      await db.rawPut('annos', rec);
+      stats.annos++;
+    }
+    // Gelöschtes
+    for (const t of data.tombs || []) {
+      if (t.k === 'score') {
+        const s = byKey.get(t.id);
+        if (s && (s.mod || 0) <= t.at && (s.added || 0) <= t.at) {
+          await db.del('scores', s.id); await db.del('files', s.id); await db.delPrefix('annos', s.id + '|');
+          scores = scores.filter((x) => x !== s); byKey.delete(t.id);
+          for (const sl of setlists) if (sl.items.includes(s.id)) { sl.items = sl.items.filter((x) => x !== s.id); await db.put('setlists', sl); }
+          stats.removed++;
+        }
+      } else if (t.k === 'anno') {
+        const cut = t.id.lastIndexOf('#');
+        const s = byKey.get(t.id.slice(0, cut));
+        if (!s) continue;
+        const key = `${s.id}|${t.id.slice(cut + 1)}`;
+        const local = await db.get('annos', key);
+        if (local?.strokes?.length && (local.mod || 0) <= t.at) {
+          if (local.img) await db.rawPut('annos', { ...local, strokes: [], mod: t.at }); else await db.del('annos', key);
+          stats.annos++;
+        }
+      } else if (t.k === 'set') {
+        const sl = setlists.find((x) => x.sid === t.id);
+        if (sl && (sl.mod || 0) <= t.at) { await db.del('setlists', sl.id); setlists = setlists.filter((x) => x !== sl); stats.sets++; }
+      }
+    }
+    // Setlists
+    for (const r of data.setlists || []) {
+      if (tombs().some((t) => t.k === 'set' && t.id === r.sid && t.at >= (r.mod || 0))) continue;
+      let sl = setlists.find((x) => x.sid === r.sid) || setlists.find((x) => x.name.toLowerCase() === String(r.name).toLowerCase());
+      const items = r.items.map((k) => byKey.get(k)?.id).filter(Boolean);
+      if (!sl) {
+        sl = { id: uid(), sid: r.sid, name: r.name, items, created: r.created || Date.now(), mod: r.mod || 0 };
+        sl.sig = setSig(sl);
+        await db.rawPut('setlists', sl); setlists.push(sl); stats.sets++;
+      } else if ((r.mod || 0) > (sl.mod || 0)) {
+        sl.sid = r.sid; sl.name = r.name; sl.items = items; sl.mod = r.mod; sl.sig = setSig(sl);
+        await db.rawPut('setlists', sl); stats.sets++;
+      } else if (sl.sid !== r.sid && (r.mod || 0) === 0 && (sl.mod || 0) === 0) {
+        // gleiche Setlist aus forScore auf beiden Geräten: gemeinsame Kennung übernehmen
+        sl.sid = r.sid; await db.rawPut('setlists', sl);
+      }
+    }
+  } finally { hideProgress(); }
+  renderLibrary(); renderSetlists();
+  if (state.tab === 'inbox') renderInbox();
+  const parts = [];
+  if (stats.added) parts.push(`${stats.added} neue Stücke`);
+  if (stats.changed) parts.push(`${stats.changed} Stücke geändert`);
+  if (stats.annos) parts.push(`${stats.annos} Seiten mit Anmerkungen`);
+  if (stats.sets) parts.push(`${stats.sets} Setlists`);
+  if (stats.removed) parts.push(`${stats.removed} gelöscht`);
+  await dialog({
+    title: 'Abgleich eingelesen',
+    body: [
+      h('p', {}, parts.length ? `Übernommen: ${parts.join(', ')}.` : 'Alles war schon auf dem neuesten Stand.'),
+      data.device ? h('p', { class: 'note' }, `Von: ${data.device}, ${new Date(data.exported).toLocaleString('de-DE')}`) : null,
+      stats.missing ? h('p', { class: 'note' }, `${stats.missing} Stücke gibt es auf dem anderen Gerät, hier aber nicht, und ihr PDF war nicht in der Datei. Dort beim Export „Alle PDFs mitnehmen“ wählen, falls du sie hier brauchst.`) : null,
+    ],
+    actions: [{ label: 'OK', value: null, primary: true }],
+  });
 }
 
 /* ---------- Eingang: neue Noten verschlagworten ---------- */
@@ -2503,4 +2733,4 @@ async function main() {
 main();
 
 // Für Tests im Browser
-window.__notenreader = { importFiles, R, settings };
+window.__notenreader = { importFiles, R, settings, exportSync, importSync, db };

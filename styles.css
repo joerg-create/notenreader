@@ -469,3 +469,6 @@ body.scanning { overflow: hidden; }
   .scan-pages { grid-template-columns: repeat(2, 1fr); }
   .inbox-drop { flex-direction: column; align-items: stretch; }
 }
+
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; font-size: 14px; }
+.check-row input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
