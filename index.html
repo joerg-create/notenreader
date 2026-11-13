@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Notenreader</title>
+  <meta name="description" content="Noten-PDFs lesen, umblättern, anmerken und in Setlists ordnen.">
+  <meta name="theme-color" content="#1f2a44">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Notenreader">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="icons/icon-192.png" alt="" width="32" height="32">
+        <h1>Notenreader</h1>
+        <span id="app-version" class="version"></span>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="library" class="active">Noten</button>
+        <button role="tab" data-tab="setlists">Setlists</button>
+        <button role="tab" data-tab="inbox">Eingang <span id="inbox-count" class="badge" hidden>0</span></button>
+      </nav>
+      <div class="top-actions">
+        <button id="btn-import" class="btn primary"><span class="ic" data-icon="plus"></span><span class="lbl">Importieren</span></button>
+        <button id="btn-settings" class="btn icon" aria-label="Einstellungen"><span class="ic" data-icon="sliders"></span></button>
+      </div>
+    </header>
+
+    <main>
+      <section id="view-library">
+        <div id="install-hint" class="hint" hidden>
+          <span>Tipp: Im Teilen-Menü von Safari <b>„Zum Home-Bildschirm“</b> wählen. Dann startet der Notenreader wie eine App, im Vollbild und offline.</span>
+          <button class="btn icon small" id="install-hint-close" aria-label="Hinweis schließen"><span class="ic" data-icon="x"></span></button>
+        </div>
+        <div class="toolbar">
+          <label class="search">
+            <span class="ic" data-icon="search"></span>
+            <input type="search" id="search" placeholder="Titel, ID, Instrument, Genre, Tag …" autocomplete="off">
+          </label>
+          <select id="sort" aria-label="Sortierung">
+            <option value="title">Titel A–Z</option>
+            <option value="composer">Komponist</option>
+            <option value="ref">ID</option>
+            <option value="genre">Genre</option>
+            <option value="opened">Zuletzt gespielt</option>
+            <option value="added">Neu hinzugefügt</option>
+          </select>
+          <div id="view-toggle" class="seg" role="group" aria-label="Ansicht">
+            <button class="btn icon" data-view="list" aria-label="Liste" title="Liste"><span class="ic" data-icon="rows"></span></button>
+            <button class="btn icon" data-view="grid" aria-label="Kacheln" title="Kacheln"><span class="ic" data-icon="grid"></span></button>
+          </div>
+          <button id="btn-select" class="btn" hidden>Auswählen</button>
+        </div>
+        <div id="filters" class="filters" hidden></div>
+        <div id="lib-count" class="lib-count"></div>
+        <nav id="az-bar" aria-label="Springen zu Buchstabe" hidden></nav>
+        <div id="az-bubble" hidden></div>
+        <div id="score-grid" class="grid"></div>
+        <div id="empty-library" class="empty" hidden>
+          <div class="empty-art" aria-hidden="true">𝄞</div>
+          <h2>Noch keine Noten</h2>
+          <p>Importiere PDF-Dateien, zum Beispiel aus iCloud Drive oder der Dateien-App.</p>
+          <button class="btn primary" id="btn-import-empty"><span class="ic" data-icon="plus"></span>PDFs importieren</button>
+        </div>
+        <p id="no-results" class="empty-small" hidden>Keine Treffer.</p>
+      </section>
+
+      <section id="view-setlists" hidden></section>
+      <section id="view-inbox" hidden></section>
+    </main>
+  </div>
+
+  <div id="reader" hidden>
+    <div id="stage"><div id="pages"></div></div>
+    <div id="edge-flash" aria-hidden="true"></div>
+
+    <div id="reader-top" class="rbar">
+      <button class="btn icon" id="r-back" aria-label="Zurück zur Bibliothek"><span class="ic" data-icon="back"></span></button>
+      <div class="r-title">
+        <div id="r-title"></div>
+        <div id="r-sub"></div>
+      </div>
+      <button class="btn icon" id="r-view" aria-label="Ansicht"><span class="ic" data-icon="book"></span></button>
+      <button class="btn icon" id="r-annotate" aria-label="Anmerken"><span class="ic" data-icon="pen"></span></button>
+    </div>
+
+    <div id="anno-bar" class="rbar" hidden>
+      <div class="tools">
+        <button class="tool" data-tool="pen" data-color="#1a1a1a" aria-label="Stift schwarz"><span class="dot" style="background:#1a1a1a"></span></button>
+        <button class="tool" data-tool="pen" data-color="#d2312d" aria-label="Stift rot"><span class="dot" style="background:#d2312d"></span></button>
+        <button class="tool" data-tool="pen" data-color="#1f62d0" aria-label="Stift blau"><span class="dot" style="background:#1f62d0"></span></button>
+        <button class="tool" data-tool="hl" data-color="#ffd400" aria-label="Textmarker"><span class="ic" data-icon="marker"></span></button>
+        <button class="tool" data-tool="eraser" aria-label="Radierer" title="Radierer"><span class="ic" data-icon="eraser"></span></button>
+        <span class="sep"></span>
+        <button class="tool" data-tool="stamp" aria-label="Musikzeichen" title="Musikzeichen"><span class="tool-glyph">&#xE1D5;</span></button>
+        <button class="tool" data-tool="text" aria-label="Text" title="Text"><span class="tool-t">T</span></button>
+        <button class="tool" data-tool="rect" aria-label="Abdecken" title="Abdecken (weißes Rechteck)"><span class="ic" data-icon="cover"></span></button>
+        <button class="tool" data-tool="select" aria-label="Auswählen und verschieben" title="Auswählen und verschieben"><span class="ic" data-icon="pointer"></span></button>
+        <button class="tool danger" id="a-delete" aria-label="Auswahl löschen" title="Auswahl löschen" hidden><span class="ic" data-icon="x"></span></button>
+        <span class="sep"></span>
+        <button class="tool" data-size="1" aria-label="Dünn"><span class="sz s1"></span></button>
+        <button class="tool" data-size="2" aria-label="Mittel"><span class="sz s2"></span></button>
+        <button class="tool" data-size="3" aria-label="Dick"><span class="sz s3"></span></button>
+        <span class="sep"></span>
+        <button class="tool" id="a-undo" aria-label="Rückgängig"><span class="ic" data-icon="undo"></span></button>
+        <button class="tool" id="a-clear" aria-label="Seite leeren"><span class="ic" data-icon="trash"></span></button>
+      </div>
+      <button class="btn small primary" id="a-done">Fertig</button>
+      <div id="stamp-bar" hidden></div>
+    </div>
+
+    <div id="reader-bottom" class="rbar">
+      <div id="setlist-nav" hidden>
+        <button class="btn small" id="sl-prev"><span class="ic" data-icon="back"></span><span id="sl-prev-lbl"></span></button>
+        <span id="sl-pos"></span>
+        <button class="btn small" id="sl-next"><span id="sl-next-lbl"></span><span class="ic" data-icon="chev"></span></button>
+      </div>
+      <div class="pager">
+        <span id="r-page"></span>
+        <input type="range" id="r-slider" min="1" max="1" value="1" aria-label="Seite">
+      </div>
+    </div>
+  </div>
+
+  <div id="select-bar" hidden>
+    <span id="sel-count"></span>
+    <button class="btn small" id="sel-all">Alle</button>
+    <button class="btn small primary" id="sel-tag" data-needs-sel><span class="ic" data-icon="tag"></span>Gemeinsam taggen</button>
+    <button class="btn small" id="sel-inbox" data-needs-sel><span class="ic" data-icon="tag"></span>Neu taggen</button>
+    <button class="btn small" id="sel-setlist" data-needs-sel><span class="ic" data-icon="list"></span>Zu Setlist</button>
+    <button class="btn small ghost" id="sel-done">Fertig</button>
+  </div>
+
+  <input type="file" id="file-input" accept="application/pdf,.pdf,.csv,.tsv,text/csv,.4sb,.4sc" multiple hidden>
+  <input type="file" id="folder-input" webkitdirectory multiple hidden>
+  <input type="file" id="fs-input" multiple hidden>
+  <input type="file" id="table-input" accept=".csv,.tsv,.txt,text/csv" hidden>
+  <div id="progress" hidden>
+    <div class="progress-card">
+      <div id="progress-text">Importiere …</div>
+      <div id="progress-name"></div>
+      <div class="progress-track"><div id="progress-bar"></div></div>
+      <button class="btn small" id="progress-cancel">Abbrechen</button>
+    </div>
+  </div>
+  <input type="file" id="backup-input" accept=".json,application/json" hidden>
+  <dialog id="dlg"></dialog>
+  <div id="drop-overlay" hidden><div>Dateien hier ablegen<br><small>PDFs, CSV-Tabelle oder forScore-Sicherung (.4sb)</small></div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
