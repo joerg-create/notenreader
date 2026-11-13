@@ -4,7 +4,7 @@ import { indexBackup, collectDocs, collectSetlists, fsList } from './forscore.js
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -72,7 +72,7 @@ function hydrateIcons(root = document) {
   }
 }
 
-const DEFAULT_SETTINGS = { sort: 'title', view: 'auto', penSize: 2, hintClosed: false, libView: 'list' };
+const DEFAULT_SETTINGS = { sort: 'title', view: 'auto', penSize: 2, hintClosed: false, libView: 'list', keepAwake: 'reading' };
 const settings = (() => {
   try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('nr-settings') || '{}') }; }
   catch { return { ...DEFAULT_SETTINGS }; }
@@ -1329,17 +1329,52 @@ async function chooseView() {
   showChrome(true);
 }
 
-/* Bildschirm wach halten */
-async function requestWakeLock() {
-  try {
-    if ('wakeLock' in navigator && !R.wakeLock && !$('#reader').hidden) {
-      R.wakeLock = await navigator.wakeLock.request('screen');
-      R.wakeLock.addEventListener('release', () => { R.wakeLock = null; });
-    }
-  } catch { /* nicht unterstützt */ }
+/* Bildschirm wach halten
+   settings.keepAwake: 'reading' (nur im Lesemodus), 'always' (solange die App offen ist), 'off'.
+   Zuerst die Wake-Lock-Schnittstelle; auf iPad/iPhone zusätzlich ein stummes Endlos-Video,
+   weil die Schnittstelle in Home-Bildschirm-Apps älterer iOS-Versionen nicht zuverlässig wirkt. */
+const isAppleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let awakeVideo = null;
+function shouldStayAwake() {
+  if (document.visibilityState !== 'visible') return false;
+  const mode = settings.keepAwake || 'reading';
+  if (mode === 'off') return false;
+  if (mode === 'always') return true;
+  return !$('#reader').hidden;
 }
-function releaseWakeLock() { try { R.wakeLock?.release(); } catch { /* egal */ } R.wakeLock = null; }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') requestWakeLock(); });
+async function updateKeepAwake() {
+  if (!shouldStayAwake()) {
+    try { R.wakeLock?.release(); } catch { /* egal */ }
+    R.wakeLock = null;
+    if (awakeVideo) awakeVideo.pause();
+    return;
+  }
+  let locked = false;
+  try {
+    if ('wakeLock' in navigator) {
+      if (!R.wakeLock) {
+        R.wakeLock = await navigator.wakeLock.request('screen');
+        R.wakeLock.addEventListener('release', () => { R.wakeLock = null; });
+      }
+      locked = true;
+    }
+  } catch { /* nicht erlaubt oder nicht unterstützt */ }
+  // Einstellung kann sich während des Wartens geändert haben
+  if (!shouldStayAwake()) { try { R.wakeLock?.release(); } catch { /* egal */ } R.wakeLock = null; awakeVideo?.pause(); return; }
+  if (!locked || isAppleTouch) {
+    if (!awakeVideo) {
+      awakeVideo = h('video', { src: 'vendor/wach.mp4', muted: true, playsinline: true, loop: true, 'aria-hidden': 'true', style: 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;left:0;bottom:0' });
+      awakeVideo.muted = true; awakeVideo.playsInline = true;
+      document.body.append(awakeVideo);
+    }
+    awakeVideo.play().catch(() => { /* braucht ein Antippen; wird beim nächsten Tippen erneut versucht */ });
+  }
+}
+const requestWakeLock = () => updateKeepAwake();
+const releaseWakeLock = () => setTimeout(updateKeepAwake, 0);
+document.addEventListener('visibilitychange', updateKeepAwake);
+// Video-Wiedergabe ist auf iOS nur nach einer Berührung erlaubt
+document.addEventListener('pointerup', () => { if (shouldStayAwake() && (!R.wakeLock || (awakeVideo && awakeVideo.paused))) updateKeepAwake(); }, true);
 
 /* ---------- Anmerkungen ---------- */
 const SIZES = { pen: [0.0016, 0.0028, 0.0048], hl: [0.012, 0.02, 0.03] };
@@ -1925,6 +1960,14 @@ async function openSettings() {
     ].map(([v, t, d]) => h('label', {},
       h('input', { type: 'radio', name: 'sview', value: v, checked: settings.view === v, onchange: () => { settings.view = v; saveSettings(); } }),
       h('div', {}, h('b', {}, t), d ? h('small', {}, d) : null)))),
+    h('div', { class: 'section-title' }, 'Bildschirm anlassen'),
+    h('div', { class: 'choice' }, [
+      ['reading', 'Beim Lesen', 'Solange Noten offen sind, geht der Bildschirm nicht aus.'],
+      ['always', 'Immer', 'Solange der Notenreader geöffnet ist, auch in der Übersicht.'],
+      ['off', 'Aus', 'Der Bildschirm geht wie eingestellt automatisch aus.'],
+    ].map(([v, t, d]) => h('label', {},
+      h('input', { type: 'radio', name: 'sawake', value: v, checked: (settings.keepAwake || 'reading') === v, onchange: () => { settings.keepAwake = v; saveSettings(); updateKeepAwake(); } }),
+      h('div', {}, h('b', {}, t), h('small', {}, d))))),
     h('div', { class: 'section-title' }, 'Umblättern'),
     h('p', { class: 'note' }, 'Tippen auf den rechten oder linken Rand, Wischen, oder ein Bluetooth-Pedal bzw. eine Tastatur (Pfeiltasten, Bild auf/ab, Leertaste).'),
     h('div', { class: 'section-title' }, 'Sicherung'),

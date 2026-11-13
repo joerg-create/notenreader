@@ -2,7 +2,8 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.6)
+## Was sie kann (Version 1.7)
+- **Bildschirm anlassen:** Unter Einstellungen „Beim Lesen“ (Standard), „Immer“ oder „Aus“. Nutzt die Wake-Lock-Funktion des Browsers, auf iPad/iPhone zusätzlich ein stummes Mini-Video (vendor/wach.mp4), weil ältere iOS-Versionen die Funktion in Home-Bildschirm-Apps ignorieren.
 - **Übersicht für große Sammlungen:** Umschalter Liste/Kacheln neben der Sortierung. Die Liste zeigt kompakte Zeilen mit ID, Titel, Komponist, Instrument, Genre und Tags. Je nach Sortierung gruppiert (Anfangsbuchstabe, Komponist, Genre, ID) mit mitlaufenden Überschriften. Am rechten Rand eine A–Z-Leiste zum Springen (tippen oder mit dem Finger entlangfahren). Filter zeigen die Anzahl je Wert, darüber steht, wie viele Stücke gerade angezeigt werden.
 
 - **Bibliothek:** PDFs importieren (Knopf „Importieren“ oder auf dem Mac per Ziehen), mit Vorschaubild, Titel, Komponist und Stichwörtern. Suche und Sortierung nach Titel, Komponist, zuletzt gespielt oder neu hinzugefügt.
