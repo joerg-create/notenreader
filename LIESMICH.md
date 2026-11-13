@@ -2,7 +2,8 @@
 
 Eigene Web-App zum Lesen von Noten-PDFs auf iPad, iPhone und Mac.
 
-## Was sie kann (Version 1.7)
+## Was sie kann (Version 1.8)
+- **Noten abfotografieren:** Im Eingang „Fotografieren“ oder unter Importieren „Noten fotografieren“ / „Fotos von Noten“. Die vier Eckpunkte auf die Blattecken ziehen (mit Lupe), „Übernehmen“ zieht die Seite gerade. Die Scan-Optik entfernt Schatten und macht das Papier weiß. Beliebig viele Seiten nacheinander aufnehmen, Reihenfolge ändern, dann „Als Stück sichern“: daraus wird ein PDF, das im Eingang zum Taggen landet.
 - **Bildschirm anlassen:** Unter Einstellungen „Beim Lesen“ (Standard), „Immer“ oder „Aus“. Nutzt die Wake-Lock-Funktion des Browsers, auf iPad/iPhone zusätzlich ein stummes Mini-Video (vendor/wach.mp4), weil ältere iOS-Versionen die Funktion in Home-Bildschirm-Apps ignorieren.
 - **Übersicht für große Sammlungen:** Umschalter Liste/Kacheln neben der Sortierung. Die Liste zeigt kompakte Zeilen mit ID, Titel, Komponist, Instrument, Genre und Tags. Je nach Sortierung gruppiert (Anfangsbuchstabe, Komponist, Genre, ID) mit mitlaufenden Überschriften. Am rechten Rand eine A–Z-Leiste zum Springen (tippen oder mit dem Finger entlangfahren). Filter zeigen die Anzahl je Wert, darüber steht, wie viele Stücke gerade angezeigt werden.
 

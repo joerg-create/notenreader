@@ -1,10 +1,11 @@
 import { db } from './db.js';
 import * as pdfjsLib from './vendor/pdf.min.mjs';
 import { indexBackup, collectDocs, collectSetlists, fsList } from './forscore.js';
+import { loadPhoto, rotateCanvas, warpQuad, enhance, makePdf, canvasToJpeg } from './scan.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -45,6 +46,9 @@ const ICONS = {
   marker: '<path d="M9 11l-6 6v3h9l3-3"/><path d="M22 12l-4.6 4.6a2 2 0 01-2.8 0l-5.2-5.2a2 2 0 010-2.8L14 4"/>',
   eraser: '<path d="M20 20H9L4 15a2 2 0 010-2.8L13.2 3a2 2 0 012.8 0l4 4a2 2 0 010 2.8L11 19"/><path d="M8 10l6 6"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/>',
+  rotate: '<path d="M20 12a8 8 0 11-2.3-5.7"/><path d="M20 4v5h-5"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   book: '<path d="M2 4h7a3 3 0 013 3v13a2 2 0 00-2-2H2z"/><path d="M22 4h-7a3 3 0 00-3 3v13a2 2 0 012-2h8z"/>',
   play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
@@ -283,6 +287,8 @@ async function importFiles(fileList) {
   if (fsFiles.length) { await importForScore(fsFiles); return; }
   const files = all.filter(isPdf);
   const tables = all.filter(isTable);
+  const photos = all.filter(isImageFile);
+  if (photos.length && !files.length && !tables.length) { scanFlow(photos); return; }
   if (!files.length && !tables.length) { toast('Bitte PDF-Dateien oder eine Tabelle (CSV) auswählen'); return; }
   try { await navigator.storage?.persist?.(); } catch { /* nicht unterstützt */ }
 
@@ -537,8 +543,8 @@ async function importForScore(files) {
 
 // Jede Auswahl ist ein <label> mit eigenem Datei-Feld darin. So öffnet der Browser den Datei-Dialog
 // direkt durch den Klick (Safari blockiert sonst per Skript geöffnete Dialoge).
-function pickOption({ iconName, title, sub, accept, multiple = false, directory = false, onFiles }) {
-  const input = h('input', { type: 'file', class: 'vh', accept: accept || null, multiple: multiple || null, webkitdirectory: directory || null });
+function pickOption({ iconName, title, sub, accept, multiple = false, directory = false, capture = null, onFiles }) {
+  const input = h('input', { type: 'file', class: 'vh', accept: accept || null, multiple: multiple || null, webkitdirectory: directory || null, capture });
   input.addEventListener('change', () => {
     const files = [...(input.files || [])];
     const d = $('#dlg');
@@ -557,6 +563,8 @@ async function importMenu() {
     body: [
       h('div', { class: 'menu' },
         pickOption({ iconName: 'upload', title: 'forScore-Sicherung oder -Datei (.4sb, .4sc)', sub: 'Noten mit Schlagwörtern, Setlists und Anmerkungen aus forScore', multiple: true, onFiles: (f) => importFiles(f) }),
+        scanCapture('Noten fotografieren', 'Mit der Kamera, auch mehrere Seiten zu einem Stück', (f) => scanFlow(f)),
+        scanLibrary('Fotos von Noten', 'Aus der Fotos-App, Ecken anpassen und gerade ziehen', (f) => scanFlow(f)),
         pickOption({ iconName: 'plus', title: 'PDF-Dateien', sub: 'Eine oder viele Dateien, optional zusammen mit einer CSV-Tabelle', accept: 'application/pdf,.pdf,.csv,.tsv,text/csv,.4sb,.4sc', multiple: true, onFiles: (f) => importFiles(f) }),
         supportsDir ? pickOption({ iconName: 'folder', title: 'Ganzer Ordner', sub: 'Alle PDFs darin, auch in Unterordnern. Liegt eine CSV-Tabelle dabei, werden ihre Schlagwörter übernommen.', directory: true, multiple: true, onFiles: (f) => importFiles(f) }) : null,
         pickOption({ iconName: 'list', title: 'Nur Schlagwörter aus Tabelle', sub: 'CSV-Datei, z. B. Metadaten-Export aus forScore, für schon importierte Stücke', accept: '.csv,.tsv,.txt,text/csv', onFiles: (f) => importFiles(f) }),
@@ -1980,6 +1988,223 @@ async function openSettings() {
   await dialog({ title: 'Einstellungen', body, actions: [{ label: 'Fertig', value: null, primary: true }] });
 }
 
+
+/* ---------- Noten abfotografieren ---------- */
+const isImageFile = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name);
+const scanCapture = (label, sub, onFiles) => pickOption({ iconName: 'camera', title: label, sub, accept: 'image/*', capture: 'environment', onFiles });
+const scanLibrary = (label, sub, onFiles) => pickOption({ iconName: 'image', title: label, sub, accept: 'image/*', multiple: true, onFiles });
+
+let scanOpen = false;
+async function scanFlow(initialFiles) {
+  if (scanOpen) return;
+  scanOpen = true;
+  const pages = []; // { canvas, url }
+  const queue = [...initialFiles];
+  let cur = null;   // { src, quad: [[x,y]×4] normiert }
+  let useEnhance = settings.scanEnhance !== false;
+  const root = h('div', { id: 'scan', role: 'dialog', 'aria-label': 'Noten fotografieren' });
+  document.body.append(root);
+  document.body.classList.add('scanning');
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  let title = `Foto-Noten ${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}.${pad(now.getMinutes())}`;
+
+  const close = () => {
+    for (const p of pages) URL.revokeObjectURL(p.url);
+    root.remove();
+    document.body.classList.remove('scanning');
+    scanOpen = false;
+  };
+  const busy = (text) => root.replaceChildren(h('div', { class: 'scan-busy' }, h('div', { class: 'spinner' }), h('p', {}, text)));
+  const addFiles = (files) => { queue.push(...files.filter(isImageFile)); if (!cur) nextPhoto(); };
+  const cancel = async () => {
+    if (pages.length && !await confirmDialog('Fotos verwerfen?', `${pages.length} ${pages.length === 1 ? 'Seite wird' : 'Seiten werden'} nicht gespeichert.`, 'Verwerfen')) return;
+    close();
+  };
+
+  async function nextPhoto() {
+    const f = queue.shift();
+    if (!f) { cur = null; review(); return; }
+    busy('Foto wird geladen …');
+    try {
+      const src = await loadPhoto(f);
+      cur = { src, quad: [[0.05, 0.05], [0.95, 0.05], [0.95, 0.95], [0.05, 0.95]] };
+      edit();
+    } catch (e) {
+      console.error(e);
+      toast(`„${f.name}“ konnte nicht gelesen werden`);
+      nextPhoto();
+    }
+  }
+
+  function edit() {
+    const { src } = cur;
+    const disp = h('canvas', { class: 'scan-img' });
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('class', 'scan-svg');
+    const poly = document.createElementNS(svgNS, 'polygon');
+    poly.setAttribute('class', 'scan-poly');
+    svg.append(poly);
+    const handles = cur.quad.map((_, i) => {
+      const g = document.createElementNS(svgNS, 'g');
+      g.setAttribute('class', 'scan-handle');
+      g.dataset.i = i;
+      const hit = document.createElementNS(svgNS, 'circle'); hit.setAttribute('r', 30); hit.setAttribute('class', 'hit');
+      const dot = document.createElementNS(svgNS, 'circle'); dot.setAttribute('r', 13); dot.setAttribute('class', 'dot');
+      g.append(hit, dot);
+      svg.append(g);
+      return g;
+    });
+    const loupe = h('canvas', { class: 'scan-loupe', width: 240, height: 240, hidden: true });
+    const box = h('div', { class: 'scan-box' }, disp, svg, loupe);
+    const stage = h('div', { class: 'scan-stage' }, box);
+    let W = 0, H = 0;
+    const layout = () => {
+      const aw = stage.clientWidth - 24, ah = stage.clientHeight - 24;
+      if (aw <= 0 || ah <= 0) return;
+      const k = Math.min(aw / src.width, ah / src.height);
+      W = Math.round(src.width * k); H = Math.round(src.height * k);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      disp.width = Math.round(W * dpr); disp.height = Math.round(H * dpr);
+      disp.style.width = svg.style.width = box.style.width = `${W}px`;
+      disp.style.height = svg.style.height = box.style.height = `${H}px`;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      disp.getContext('2d').drawImage(src, 0, 0, disp.width, disp.height);
+      draw();
+    };
+    const draw = () => {
+      poly.setAttribute('points', cur.quad.map(([x, y]) => `${x * W},${y * H}`).join(' '));
+      handles.forEach((g, i) => g.setAttribute('transform', `translate(${cur.quad[i][0] * W},${cur.quad[i][1] * H})`));
+    };
+    const showLoupe = (i) => {
+      const [x, y] = cur.quad[i];
+      const ctx = loupe.getContext('2d');
+      const r = 60; // Ausschnitt in Quellpixeln (Radius) → 2-fach
+      const sx = x * src.width, sy = y * src.height;
+      const span = r * Math.max(1, src.width / W) * 0.5;
+      ctx.clearRect(0, 0, 240, 240);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(120, 120, 118, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = '#222'; ctx.fillRect(0, 0, 240, 240);
+      ctx.drawImage(src, sx - span, sy - span, span * 2, span * 2, 0, 0, 240, 240);
+      ctx.restore();
+      ctx.strokeStyle = '#e8a33d'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(120, 96); ctx.lineTo(120, 144); ctx.moveTo(96, 120); ctx.lineTo(144, 120); ctx.stroke();
+      loupe.hidden = false;
+      // Lupe über dem Finger, auf der anderen Seite wenn zu weit oben
+      const lx = Math.min(Math.max(x * W - 60, 0), W - 120);
+      const ly = y * H > 150 ? y * H - 150 : y * H + 30;
+      loupe.style.left = `${lx}px`; loupe.style.top = `${ly}px`;
+    };
+    let dragI = -1;
+    svg.addEventListener('pointerdown', (e) => {
+      const g = e.target.closest('.scan-handle');
+      let i = g ? +g.dataset.i : -1;
+      if (i < 0) { // nächstgelegene Ecke nehmen, wenn nah genug
+        const r = svg.getBoundingClientRect();
+        const px = e.clientX - r.left, py = e.clientY - r.top;
+        let best = 1e9;
+        cur.quad.forEach(([x, y], k) => { const d = Math.hypot(x * W - px, y * H - py); if (d < best) { best = d; i = k; } });
+        if (best > 60) return;
+      }
+      dragI = i;
+      svg.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      showLoupe(i);
+    });
+    svg.addEventListener('pointermove', (e) => {
+      if (dragI < 0) return;
+      const r = svg.getBoundingClientRect();
+      cur.quad[dragI] = [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+      draw();
+      showLoupe(dragI);
+    });
+    const up = () => { dragI = -1; loupe.hidden = true; };
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+
+    const enhanceBox = h('input', { type: 'checkbox', checked: useEnhance, onchange: () => { useEnhance = enhanceBox.checked; settings.scanEnhance = useEnhance; saveSettings(); } });
+    root.replaceChildren(
+      h('div', { class: 'scan-top' },
+        h('button', { class: 'btn small', onclick: cancel }, 'Abbrechen'),
+        h('div', { class: 'scan-title' }, h('b', {}, `Seite ${pages.length + 1}`), h('small', {}, 'Die vier Punkte auf die Ecken des Notenblatts ziehen')),
+        h('span', { class: 'scan-spacer' })),
+      stage,
+      h('div', { class: 'scan-bottom' },
+        h('button', { class: 'btn', onclick: () => { cur.src = rotateCanvas(cur.src, 1); cur.quad = cur.quad.map(([x, y]) => [1 - y, x]); cur.quad = [cur.quad[3], cur.quad[0], cur.quad[1], cur.quad[2]]; edit(); } }, icon('rotate'), 'Drehen'),
+        h('button', { class: 'btn', onclick: () => { cur.quad = [[0, 0], [1, 0], [1, 1], [0, 1]]; draw(); } }, 'Ganzes Foto'),
+        h('label', { class: 'btn scan-toggle' }, enhanceBox, 'Scan-Optik'),
+        h('button', { class: 'btn primary', onclick: accept }, icon('check'), 'Übernehmen')));
+    requestAnimationFrame(layout);
+    window.addEventListener('resize', layout);
+    root._cleanup = () => window.removeEventListener('resize', layout);
+  }
+
+  async function accept() {
+    root._cleanup?.();
+    busy('Seite wird gerade gezogen …');
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      const { src, quad } = cur;
+      const q = quad.map(([x, y]) => [x * src.width, y * src.height]);
+      let out = warpQuad(src, q);
+      if (useEnhance) out = enhance(out);
+      const blob = await new Promise((r) => out.toBlob(r, 'image/jpeg', 0.6));
+      pages.push({ canvas: out, url: URL.createObjectURL(blob) });
+      src.width = src.height = 0;
+    } catch (e) {
+      console.error(e);
+      toast('Das Foto konnte nicht bearbeitet werden');
+    }
+    cur = null;
+    nextPhoto();
+  }
+
+  function review() {
+    if (!pages.length) { close(); return; }
+    const titleInput = h('input', { value: title, autocomplete: 'off', oninput: () => { title = titleInput.value; } });
+    const move = (i, d) => { const j = i + d; if (j < 0 || j >= pages.length) return; [pages[i], pages[j]] = [pages[j], pages[i]]; review(); };
+    root.replaceChildren(
+      h('div', { class: 'scan-top' },
+        h('button', { class: 'btn small', onclick: cancel }, 'Abbrechen'),
+        h('div', { class: 'scan-title' }, h('b', {}, pages.length === 1 ? '1 Seite' : `${pages.length} Seiten`), h('small', {}, 'Weitere Seiten fotografieren oder als Stück sichern')),
+        h('span', { class: 'scan-spacer' })),
+      h('div', { class: 'scan-pages' }, pages.map((p, i) => h('figure', { class: 'scan-page' },
+        h('img', { src: p.url, alt: `Seite ${i + 1}` }),
+        h('figcaption', {},
+          h('button', { class: 'btn icon small', 'aria-label': 'Nach vorne', disabled: i === 0, onclick: () => move(i, -1) }, icon('back')),
+          h('span', {}, `Seite ${i + 1}`),
+          h('button', { class: 'btn icon small', 'aria-label': 'Nach hinten', disabled: i === pages.length - 1, onclick: () => move(i, 1) }, icon('chev')),
+          h('button', { class: 'btn icon small danger', 'aria-label': 'Seite entfernen', onclick: () => { URL.revokeObjectURL(p.url); pages.splice(i, 1); review(); } }, icon('trash')))))),
+      h('div', { class: 'scan-bottom scan-review' },
+        h('div', { class: 'scan-more' },
+          scanCapture('Weitere Seite fotografieren', '', addFiles),
+          scanLibrary('Aus Fotos wählen', '', addFiles)),
+        h('div', { class: 'scan-save' },
+          h('label', { class: 'field' }, h('span', {}, 'Titel'), titleInput),
+          h('button', { class: 'btn primary', onclick: save }, icon('check'), 'Als Stück sichern'))));
+  }
+
+  async function save() {
+    busy('PDF wird erstellt …');
+    try {
+      const jpegs = [];
+      for (const p of pages) jpegs.push(await canvasToJpeg(p.canvas, 0.82));
+      const name = (title.trim() || 'Foto-Noten').replace(/[\\/:*?"<>|]/g, '-');
+      const file = new File([makePdf(jpegs, name)], `${name}.pdf`, { type: 'application/pdf' });
+      close();
+      await importFiles([file]);
+    } catch (e) {
+      console.error(e);
+      toast('PDF konnte nicht erstellt werden');
+      review();
+    }
+  }
+
+  nextPhoto();
+}
+
 /* ---------- Eingang: neue Noten verschlagworten ---------- */
 // Ein Stück gehört in den Eingang, wenn es frisch importiert und noch nicht bestätigt wurde
 // oder wenn es weder Instrument noch Genre noch Tags hat.
@@ -2064,7 +2289,9 @@ function renderInbox() {
   const dropBox = h('div', { class: 'inbox-drop' },
     h('div', {}, h('b', {}, 'Neue Noten hinzufügen'),
       h('div', { class: 'note' }, 'PDF-Anhänge aus der Mail hierher ziehen, oder auf dem iPad/iPhone zuerst in „Dateien“ sichern und dann importieren.')),
-    pickOption({ iconName: 'plus', title: 'PDFs wählen', sub: '', accept: 'application/pdf,.pdf', multiple: true, onFiles: (f) => importFiles(f) }));
+    h('div', { class: 'inbox-picks' },
+      scanCapture('Fotografieren', '', (f) => scanFlow(f)),
+      pickOption({ iconName: 'plus', title: 'PDFs wählen', sub: '', accept: 'application/pdf,.pdf', multiple: true, onFiles: (f) => importFiles(f) })));
   if (!list.length) {
     root.replaceChildren(dropBox, h('div', { class: 'empty' }, h('div', { class: 'empty-art' }, '✓'), h('h2', {}, 'Alles verschlagwortet'),
       h('p', {}, 'Neue Noten ohne Instrument, Genre oder Tags erscheinen hier automatisch.')));
