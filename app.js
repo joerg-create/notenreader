@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.25.0';
+const APP_VERSION = '1.25.1';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -36,6 +36,7 @@ function h(tag, attrs = {}, ...kids) {
 const ICONS = {
   back: '<path d="M15 18l-6-6 6-6"/>',
   music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  clefturn: '<path d="M10.2 21.2c1.2.3 2.1-.4 2-1.6L10.6 4.6c-.1-1.7 1.8-2.3 2.4-.9.8 1.9-1 3.9-3 5.4-1.9 1.5-2.7 3-2.3 4.6.5 1.9 2.4 2.7 4.2 2.2 1.6-.5 2.3-2 1.9-3.3-.4-1.3-1.9-1.9-3.1-1.2"/><path d="M17 4.5a7 7 0 0 1 3 5.5"/><path d="M20.8 7.6 20 10l-2.3-.9"/>',
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   chev: '<path d="M9 18l6-6-6-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
