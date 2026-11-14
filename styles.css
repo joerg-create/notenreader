@@ -730,3 +730,8 @@ body.scanning { overflow: hidden; }
 #practice .mini-b:active { background: rgba(120, 120, 128, .55); }
 #reader.night ~ #practice .mini-b { color: rgba(240, 240, 245, .85); }
 .pr-head-b { display: flex; gap: 6px; }
+
+/* Drehen und gerade richten */
+.ce-skew { width: min(220px, 40vw); }
+.ce-skew-lbl { min-width: 3.2em; font-variant-numeric: tabular-nums; }
+.ce-lbl { color: var(--muted); }

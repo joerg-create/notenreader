@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.24.0';
+const APP_VERSION = '1.25.0';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1235,6 +1235,71 @@ function cropEnabled() {
   if (s && typeof s.crop === 'boolean') return s.crop;
   return settings.autoCrop !== false;
 }
+/* Drehen und gerade richten: s.orient = { all: {r, k}, pages: { n: {r, k} } }
+   r: Drehung in 90°-Schritten, k: Feinwinkel in Grad (schief gescannte Seiten). */
+function orientOf(s, n) {
+  const o = s?.orient;
+  if (!o) return null;
+  const v = o.pages?.[n] ?? o.all;
+  return v && ((v.r || 0) % 360 || v.k) ? { r: ((v.r || 0) % 360 + 360) % 360, k: +v.k || 0 } : null;
+}
+const orientKey = (a) => (a ? `${a.r}/${a.k}` : '');
+function adjViewport(page, scale, adj) {
+  return page.getViewport({ scale, rotation: ((page.rotate || 0) + (adj?.r || 0)) % 360 });
+}
+// Ganze Seite gedreht und gerade gerichtet als Canvas
+// Nacheinander rendern: gleichzeitige Aufträge derselben Seite stören sich in PDF.js
+let adjChain = Promise.resolve();
+function renderAdjusted(page, scale, adj) {
+  const run = adjChain.then(() => renderAdjustedNow(page, scale, adj));
+  adjChain = run.catch(() => {});
+  return run;
+}
+async function renderAdjustedNow(page, scale, adj) {
+  const vp = adjViewport(page, scale, adj);
+  const W = Math.ceil(vp.width), H = Math.ceil(vp.height);
+  const src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const ctx = src.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  if (!adj?.k) return src;
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const o = out.getContext('2d', { willReadFrequently: true });
+  o.fillStyle = '#fff'; o.fillRect(0, 0, W, H);
+  o.translate(W / 2, H / 2); o.rotate(adj.k * Math.PI / 180); o.drawImage(src, -W / 2, -H / 2);
+  src.width = src.height = 0;
+  return out;
+}
+// Schräglage erkennen: Notenlinien sind am schärfsten, wenn die Zeilen-Projektion die größten Spitzen hat
+function skewOfCanvas(cv) {
+  const W = cv.width, H = cv.height;
+  const d = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const xs = [], ys = [];
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 2) {
+    const i = (y * W + x) * 4;
+    if (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114 < 130000) { xs.push(x - W / 2); ys.push(y); }
+  }
+  if (xs.length < 200) return 0;
+  const score = (deg) => {
+    const t = Math.tan(deg * Math.PI / 180);
+    const hist = new Float32Array(H * 2 + 2);
+    for (let i = 0; i < xs.length; i++) { const yy = Math.round(ys[i] - xs[i] * t + H / 2); if (yy >= 0 && yy < hist.length) hist[yy]++; }
+    let sum = 0; for (const v of hist) sum += v * v;
+    return sum;
+  };
+  let best = 0, bestS = -1;
+  for (let a = -6; a <= 6.001; a += 0.25) { const sc = score(a); if (sc > bestS) { bestS = sc; best = a; } }
+  for (let a = best - 0.25; a <= best + 0.25; a += 0.05) { const sc = score(a); if (sc > bestS) { bestS = sc; best = a; } }
+  return Math.abs(best) < 0.1 ? 0 : -Math.round(best * 10) / 10;
+}
+async function detectSkew(page, r) {
+  const vp1 = adjViewport(page, 1, { r });
+  const cv = await renderAdjusted(page, 800 / Math.max(vp1.width, vp1.height), { r, k: 0 });
+  try { return skewOfCanvas(cv); } finally { cv.width = cv.height = 0; }
+}
+
 function manualCrop(s, n) {
   const cb = s?.cropBox;
   if (!cb) return undefined;
@@ -1245,8 +1310,9 @@ function getCrop(page, n) {
   if (m === 'none') return null;
   if (Array.isArray(m)) return m;
   if (!cropEnabled()) return null;
-  if (!R.crops.has(n)) R.crops.set(n, detectCrop(page).catch(() => null));
-  return R.crops.get(n);
+  const ck = `${n}|${orientKey(orientOf(R.score, n))}`;
+  if (!R.crops.has(ck)) R.crops.set(ck, detectCrop(page, orientOf(R.score, n)).catch(() => null));
+  return R.crops.get(ck);
 }
 function profileRuns(prof, n) {
   const gap = Math.max(3, Math.round(n * 0.035));
@@ -1264,15 +1330,12 @@ function profileRuns(prof, n) {
   if (!keep.length) return null;
   return [keep[0].start, keep[keep.length - 1].end + 1];
 }
-async function detectCrop(page) {
-  const vp1 = page.getViewport({ scale: 1 });
+async function detectCrop(page, adj) {
+  const vp1 = adjViewport(page, 1, adj);
   const sc = 420 / Math.max(vp1.width, vp1.height);
-  const vp = page.getViewport({ scale: sc });
-  const cv = document.createElement('canvas');
-  const W = cv.width = Math.ceil(vp.width), H = cv.height = Math.ceil(vp.height);
+  const cv = await renderAdjusted(page, sc, adj);
+  const W = cv.width, H = cv.height;
   const ctx = cv.getContext('2d', { willReadFrequently: true });
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-  await page.render({ canvasContext: ctx, viewport: vp }).promise;
   const d = ctx.getImageData(0, 0, W, H).data;
   cv.width = cv.height = 0;
   const dark = new Uint8Array(W * H);
@@ -1317,14 +1380,23 @@ async function cropEditor(s, startPage = 1) {
   const N = doc.numPages;
   const draft = JSON.parse(JSON.stringify(s.cropBox || {}));
   draft.pages = draft.pages || {};
+  const dOr = JSON.parse(JSON.stringify(s.orient || {}));
+  dOr.pages = dOr.pages || {};
+  const curAdj = (n) => { const v = (scope === 'page' && dOr.pages[n] !== undefined) ? dOr.pages[n] : dOr.all; return v && (v.r || v.k) ? { r: v.r || 0, k: v.k || 0 } : null; };
+  const setAdj = (v) => {
+    const clean = v.r % 360 || v.k ? { r: ((v.r % 360) + 360) % 360, k: Math.round(v.k * 10) / 10 } : undefined;
+    if (scope === 'page') { if (clean) dOr.pages[pg] = clean; else dOr.pages[pg] = { r: 0, k: 0 }; }
+    else { if (clean) dOr.all = clean; else delete dOr.all; }
+  };
   let pg = Math.min(Math.max(1, startPage), N);
-  let scope = draft.pages[pg] !== undefined ? 'page' : 'all';
+  let scope = (draft.pages[pg] !== undefined || dOr.pages[pg] !== undefined) ? 'page' : 'all';
   let rect = null;       // aktueller Rahmen [x, y, w, h]
   let mode = 'box';      // 'box' | 'none' | 'auto'
   const autoCache = new Map();
   const autoFor = async (n) => {
-    if (!autoCache.has(n)) autoCache.set(n, detectCrop(await doc.getPage(n)).catch(() => null));
-    return autoCache.get(n);
+    const a = curAdj(n), key = `${n}|${orientKey(a)}`;
+    if (!autoCache.has(key)) autoCache.set(key, detectCrop(await doc.getPage(n), a).catch(() => null));
+    return autoCache.get(key);
   };
 
   const root = h('div', { id: 'crop-ed', role: 'dialog', 'aria-label': 'Zuschneiden' });
@@ -1340,16 +1412,42 @@ async function cropEditor(s, startPage = 1) {
   const autoB = h('button', { class: 'btn', onclick: () => setMode('auto') }, 'Automatisch');
   const noneB = h('button', { class: 'btn', onclick: () => setMode('none') }, 'Ganze Seite');
   const status = h('div', { class: 'ce-status' });
+  const skew = h('input', { type: 'range', min: -10, max: 10, step: 0.1, value: 0, class: 'ce-skew', 'aria-label': 'Gerade richten' });
+  const skewLbl = h('span', { class: 'ce-skew-lbl' }, '0°');
+  const turn = async (d) => { const a = curAdj(pg) || { r: 0, k: 0 }; setAdj({ r: a.r + d, k: a.k }); await reorient(); };
+  const rotL = h('button', { class: 'btn icon', 'aria-label': 'Nach links drehen', title: 'Nach links drehen', onclick: () => turn(270) }, '↺');
+  const rotR = h('button', { class: 'btn icon', 'aria-label': 'Nach rechts drehen', title: 'Nach rechts drehen', onclick: () => turn(90) }, '↻');
+  const straightB = h('button', { class: 'btn', onclick: async () => {
+    straightB.disabled = true;
+    try {
+      const a = curAdj(pg) || { r: 0, k: 0 };
+      const k = await detectSkew(await doc.getPage(pg), a.r);
+      setAdj({ r: a.r, k }); await reorient();
+      toast(k ? `Um ${k.toLocaleString('de-DE')}° gerade gerichtet` : 'Die Seite ist schon gerade');
+    } finally { straightB.disabled = false; }
+  } }, 'Automatisch gerade');
+  let skewT = 0;
+  skew.addEventListener('input', () => {
+    const a = curAdj(pg) || { r: 0, k: 0 };
+    setAdj({ r: a.r, k: +skew.value });
+    skewLbl.textContent = `${(+skew.value).toLocaleString('de-DE')}°`;
+    clearTimeout(skewT); skewT = setTimeout(() => reorient(), 120);
+  });
+  async function reorient() {
+    if (mode === 'auto') rect = ((await autoFor(pg)) || [0, 0, 1, 1]).slice();
+    paint(); await renderPage();
+  }
   root.append(
     h('div', { class: 'scan-top' },
       h('button', { class: 'btn', onclick: () => close() }, 'Abbrechen'),
-      h('div', { class: 'scan-title' }, h('b', {}, 'Zuschneiden'), h('small', {}, s.title)),
+      h('div', { class: 'scan-title' }, h('b', {}, 'Zuschneiden und drehen'), h('small', {}, s.title)),
       h('button', { class: 'btn primary', onclick: () => apply() }, 'Übernehmen')),
     area,
     h('div', { class: 'ce-bottom' },
       status,
       h('div', { class: 'ce-row' }, prevB, pageLbl, nextB, h('div', { class: 'segs' }, scopeAll, scopePage)),
-      h('div', { class: 'ce-row' }, autoB, noneB)));
+      h('div', { class: 'ce-row' }, autoB, noneB),
+      h('div', { class: 'ce-row' }, rotL, rotR, h('span', { class: 'ce-lbl' }, 'Schief'), skew, skewLbl, straightB)));
   document.body.append(root);
 
   function stored(n) { return scope === 'page' ? draft.pages[n] : draft.all; }
@@ -1373,6 +1471,8 @@ async function cropEditor(s, startPage = 1) {
     scopeAll.classList.toggle('active', scope === 'all');
     scopePage.classList.toggle('active', scope === 'page');
     pageLbl.textContent = `Seite ${pg} / ${N}`;
+    const a = curAdj(pg);
+    if (document.activeElement !== skew) { skew.value = a?.k || 0; skewLbl.textContent = `${(a?.k || 0).toLocaleString('de-DE')}°`; }
     prevB.disabled = pg <= 1; nextB.disabled = pg >= N;
     status.textContent = mode === 'auto' ? 'Automatisch erkannt. Rahmen an den Griffen ziehen zum Anpassen.'
       : mode === 'none' ? 'Ganze Seite wird eingepasst, ohne Zuschnitt.'
@@ -1380,22 +1480,26 @@ async function cropEditor(s, startPage = 1) {
   }
   async function renderPage() {
     const page = await doc.getPage(pg);
-    const vp1 = page.getViewport({ scale: 1 });
+    const adj = curAdj(pg);
+    const vp1 = adjViewport(page, 1, adj);
     const aw = area.clientWidth - 24, ah = area.clientHeight - 24;
     const sc = Math.min(aw / vp1.width, ah / vp1.height);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const vp = page.getViewport({ scale: sc * dpr });
-    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    const full = await renderAdjusted(page, sc * dpr, adj);
+    canvas.width = full.width; canvas.height = full.height;
     sheet.style.width = Math.floor(vp1.width * sc) + 'px'; sheet.style.height = Math.floor(vp1.height * sc) + 'px';
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    canvas.getContext('2d').drawImage(full, 0, 0);
+    full.width = full.height = 0;
   }
   async function show() { await loadRect(); paint(); await renderPage(); }
-  async function go(d) { pg = Math.min(Math.max(1, pg + d), N); if (scope === 'page' && draft.pages[pg] === undefined) scope = 'all'; await show(); }
+  async function go(d) { pg = Math.min(Math.max(1, pg + d), N); scope = (draft.pages[pg] !== undefined || dOr.pages[pg] !== undefined) ? 'page' : 'all'; await show(); }
   async function setScope(sc) {
     if (sc === scope) return;
     const cur = { mode, rect: rect.slice() };
-    if (sc === 'all') delete draft.pages[pg];
+    const curO = curAdj(pg);
+    if (sc === 'all') { delete draft.pages[pg]; delete dOr.pages[pg]; }
     scope = sc;
+    if (sc === 'page' && curO) dOr.pages[pg] = { ...curO };
     // Beim Umschalten den sichtbaren Rahmen übernehmen
     mode = cur.mode; rect = cur.rect; store(); paint();
   }
@@ -1463,14 +1567,18 @@ async function cropEditor(s, startPage = 1) {
     if (draft.all !== undefined) clean.all = draft.all;
     if (Object.keys(draft.pages).length) clean.pages = draft.pages;
     if (Object.keys(clean).length) s.cropBox = clean; else delete s.cropBox;
+    const co = {};
+    if (dOr.all) co.all = dOr.all;
+    if (Object.keys(dOr.pages).length) co.pages = dOr.pages;
+    if (Object.keys(co).length) s.orient = co; else delete s.orient;
     await db.put('scores', s);
     close();
     if (!$('#reader').hidden && R.score === s) {
       R.cropRev = (R.cropRev || 0) + 1;
-      R.cache.clear();
+      R.cache.clear(); R.crops.clear();
       renderSpread();
     }
-    toast('Zuschnitt gesichert');
+    toast('Gesichert');
   }
   await show();
 }
@@ -1560,7 +1668,7 @@ function updateReaderInfo() {
 async function getPageView(n, maxW, maxH) {
   const mode = viewMode();
   const cropOn = cropEnabled() || !!R.score?.cropBox;
-  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}|${cropOn ? 'c' + (R.cropRev || 0) : ''}`;
+  const key = `${n}|${Math.round(maxW)}|${Math.round(maxH)}|${mode}|${cropOn ? 'c' + (R.cropRev || 0) : ''}|${orientKey(orientOf(R.score, n))}`;
   if (R.cache.has(key)) {
     const v = R.cache.get(key);
     R.cache.delete(key); R.cache.set(key, v);
@@ -1569,7 +1677,8 @@ async function getPageView(n, maxW, maxH) {
   const doc = R.doc;
   const promise = (async () => {
     const page = await doc.getPage(n);
-    const vp1 = page.getViewport({ scale: 1 });
+    const adj = orientOf(R.score, n);
+    const vp1 = adjViewport(page, 1, adj);
     // Zuschnitt: sichtbarer Ausschnitt [x, y, w, h] relativ zur Seite
     const c = (cropOn && await getCrop(page, n)) || [0, 0, 1, 1];
     const fw = vp1.width * c[2], fh = vp1.height * c[3];
@@ -1581,11 +1690,19 @@ async function getPageView(n, maxW, maxH) {
     let dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     const maxArea = 9e6; // iOS hat ein knappes Speicherlimit für Canvas
     if (boxW * boxH * dpr * dpr > maxArea) dpr = Math.sqrt(maxArea / (boxW * boxH));
-    const vp = page.getViewport({ scale: scale * dpr, offsetX: -offX * dpr, offsetY: -offY * dpr });
+    if (adj && cssW * cssH * dpr * dpr > maxArea) dpr = Math.sqrt(maxArea / (cssW * cssH));
     const canvas = h('canvas', { class: 'pdf' });
     canvas.width = Math.floor(boxW * dpr); canvas.height = Math.floor(boxH * dpr);
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    if (adj) {
+      // gedreht/gerade gerichtet: ganze Seite zeichnen, dann den Ausschnitt übernehmen
+      const full = await renderAdjusted(page, scale * dpr, adj);
+      canvas.getContext('2d').drawImage(full, offX * dpr, offY * dpr, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+      full.width = full.height = 0;
+    } else {
+      const vp = page.getViewport({ scale: scale * dpr, offsetX: -offX * dpr, offsetY: -offY * dpr });
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    }
     const anno = h('canvas', { class: 'anno' });
     anno.style.width = cssW + 'px'; anno.style.height = cssH + 'px';
     anno.style.left = -offX + 'px'; anno.style.top = -offY + 'px';
@@ -3717,7 +3834,7 @@ async function main() {
 main();
 
 // Für Tests im Browser
-window.__notenreader = { importFiles, R, settings, exportSync, importSync, db, editScore, scoreById: (id) => scoreById(id) };
+window.__notenreader = { importFiles, R, settings, exportSync, importSync, db, editScore, skewOfCanvas, scoreById: (id) => scoreById(id) };
 // Schnittstelle für die iPad/iPhone-App (iCloud-Abgleich, Kurzbefehle)
 window.notenreaderApp = {
   version: APP_VERSION,
