@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="m" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#B8741F"/><stop offset=".45" stop-color="#F8D27E"/><stop offset="1" stop-color="#E2A040"/></linearGradient>
+<linearGradient id="b" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#B8741F"/><stop offset=".5" stop-color="#F8D27E"/><stop offset="1" stop-color="#B8741F"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" fill="#1F2A44"/>
+<g transform="translate(512 545) rotate(12) translate(-500 -560)">
+ <g fill="none" stroke-linecap="round">
+  <!-- äußere ovale Windung -->
+  <ellipse cx="500" cy="640" rx="175" ry="245" stroke="url(#m)" stroke-width="50"/>
+  <!-- zweite Windung parallel -->
+  <ellipse cx="500" cy="655" rx="118" ry="182" stroke="url(#m)" stroke-width="26"/>
+  <!-- Mundrohr mit Mundstück nach links -->
+  <path d="M330 600 C 270 590, 220 560, 190 515" stroke="url(#m)" stroke-width="22"/>
+ </g>
+ <path d="M190 515 l -22 -34" stroke="#E2A040" stroke-width="34" stroke-linecap="round"/>
+ <!-- Schallstück senkrecht nach oben -->
+ <path d="M462 410 C 462 300 450 215 345 120 Q 500 80 655 120 C 550 215 538 300 538 410 Z" fill="url(#b)"/>
+ <ellipse cx="500" cy="118" rx="158" ry="36" fill="#F8D27E" stroke="#B8741F" stroke-width="10"/>
+ <ellipse cx="500" cy="118" rx="120" ry="20" fill="#1F2A44" opacity=".35"/>
+ <!-- Ventilblock: 4 Drehventile in der Mitte -->
+ <rect x="456" y="500" width="88" height="300" rx="40" fill="url(#m)" stroke="#1F2A44" stroke-width="10"/>
+ <g fill="#F8D27E" stroke="#B8741F" stroke-width="6">
+  <circle cx="500" cy="548" r="30"/><circle cx="500" cy="618" r="30"/><circle cx="500" cy="688" r="30"/><circle cx="500" cy="758" r="30"/>
+ </g>
+ <g fill="#1F2A44"><circle cx="500" cy="548" r="9"/><circle cx="500" cy="618" r="9"/><circle cx="500" cy="688" r="9"/><circle cx="500" cy="758" r="9"/></g>
+ <!-- Hebel nach rechts -->
+ <g stroke="#E2A040" stroke-width="12" stroke-linecap="round" fill="none">
+  <path d="M530 548 Q 600 540 640 560 M530 618 Q 600 612 640 625 M530 688 Q 600 684 640 690"/>
+ </g>
+ <g fill="#F8D27E" stroke="#B8741F" stroke-width="5"><ellipse cx="648" cy="562" rx="20" ry="14"/><ellipse cx="648" cy="626" rx="20" ry="14"/><ellipse cx="648" cy="690" rx="20" ry="14"/></g>
+</g>
+</svg>
