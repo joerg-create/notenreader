@@ -6,7 +6,7 @@ import { initPractice } from './practice.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).href;
 
-const APP_VERSION = '1.23.3';
+const APP_VERSION = '1.23.4';
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -3695,6 +3695,8 @@ function bindUI() {
   $('#install-hint-close').addEventListener('click', () => { settings.hintClosed = true; saveSettings(); $('#install-hint').hidden = true; });
 }
 
+let markReady;
+const appReady = new Promise((r) => { markReady = r; });
 async function main() {
   bindUI();
   try {
@@ -3703,6 +3705,7 @@ async function main() {
     console.error(e);
     toast('Speicher nicht verfügbar. Ist privates Surfen aktiv?', 8000);
   }
+  markReady(true);
   renderLibrary();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     const hadController = !!navigator.serviceWorker.controller;
@@ -3718,8 +3721,10 @@ window.__notenreader = { importFiles, R, settings, exportSync, importSync, db, e
 // Schnittstelle für die iPad/iPhone-App (iCloud-Abgleich, Kurzbefehle)
 window.notenreaderApp = {
   version: APP_VERSION,
-  features: ['pdfIds', 'listScores'],
-  listScores: () => scores.map((s) => ({ id: s.id, size: s.size || 0 })),
+  features: ['pdfIds', 'listScores', 'ready'],
+  // Erfüllt, sobald Stücke, Setlists und Anmerkungen aus dem Speicher geladen sind
+  ready: appReady,
+  listScores: () => scores.map((s) => ({ id: s.id, size: s.size || 0, syncedIn: !!s.syncedIn })),
   listSetlists: () => setlists.map((sl) => ({ id: sl.id, sid: sl.sid, name: sl.name, count: sl.items.length })),
   openSetlist: (id) => { const sl = setlists.find((x) => x.id === id || x.sid === id); if (!sl) return false; playSetlist(sl, 0); return true; },
   // Liefert die Abgleich-Dateien als JSON-Texte. since: nur PDFs von Stücken, die danach dazukamen (ms). mark: Zeitpunkt merken.
